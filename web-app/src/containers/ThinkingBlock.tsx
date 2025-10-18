@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import { RenderMarkdown } from './RenderMarkdown'
 import { useAppState } from '@/hooks/useAppState'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { extractThinkingContent } from '@/lib/utils'
+// import { extractThinkingContent } from '@/lib/utils'
 import { useMemo, useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
 
@@ -42,39 +42,16 @@ const useThinkingStore = create<ThinkingBlockState>((set) => ({
 
 // Helper to format duration in seconds
 const formatDuration = (ms: number) => {
-  // Only show seconds if duration is present and non-zero
   if (ms > 0) {
     return Math.round(ms / 1000)
   }
   return 0
 }
 
-// Function to safely extract thought paragraphs from streaming text
-const extractStreamingParagraphs = (rawText: string): string[] => {
-  const cleanedContent = rawText.replace(/<\/?think>/g, '').trim()
-
-  // Split by double newline (paragraph boundary)
-  let paragraphs = cleanedContent
-    .split(/\n\s*\n/)
-    .filter((s) => s.trim().length > 0)
-
-  // If no explicit double newline paragraphs, treat single newlines as breaks for streaming visualization
-  if (paragraphs.length <= 1 && cleanedContent.includes('\n')) {
-    paragraphs = cleanedContent.split('\n').filter((s) => s.trim().length > 0)
-  }
-
-  // Ensure we always return at least one item if content exists
-  if (paragraphs.length === 0 && cleanedContent.length > 0) {
-    return [cleanedContent]
-  }
-
-  return paragraphs
-}
-
 const ThinkingBlock = ({
   id,
   text,
-  steps,
+  steps = [],
   loading: propLoading,
   duration,
 }: Props) => {
@@ -95,52 +72,62 @@ const ThinkingBlock = ({
   // Set default expansion state: expanded if loading, collapsed if done.
   const isExpanded = thinkingState[id] ?? (loading ? true : false)
 
-  const thinkingContent = extractThinkingContent(text)
+  // Filter out the 'done' step for streaming display
+  const stepsWithoutDone = useMemo(
+    () => steps.filter((step) => step.type !== 'done'),
+    [steps]
+  )
 
-  // If we are not loading AND there is no content/steps, hide the block entirely.
-  const hasContent = !!thinkingContent || (steps && steps.length >= 1)
-  if (!loading && !hasContent) return null
+  // Get the current step being streamed (last step that's not 'done')
+  const currentStreamingStepIndex = stepsWithoutDone.length - 1
+  const currentStep =
+    currentStreamingStepIndex >= 0
+      ? stepsWithoutDone[currentStreamingStepIndex]
+      : null
 
-  // --- Streaming Logic ---
-  const streamingParagraphs = extractStreamingParagraphs(thinkingContent)
-  const currentParagraph =
-    streamingParagraphs[streamingParagraphs.length - 1] || ''
-
-  // State for replacement animation
-  const [visibleParagraph, setVisibleParagraph] = useState(currentParagraph)
+  // Track which step index we're displaying
+  const [displayedStepIndex, setDisplayedStepIndex] = useState(
+    currentStreamingStepIndex
+  )
   const [transitioning, setTransitioning] = useState(false)
 
+  // When a new step arrives during streaming, animate the transition
   useEffect(() => {
-    if (loading && currentParagraph !== visibleParagraph) {
-      // Start transition out (opacity: 0)
+    if (loading && currentStreamingStepIndex > displayedStepIndex) {
       setTransitioning(true)
 
-      // Simulate subtle easeIn replacement after a short delay
       const timeout = setTimeout(() => {
-        setVisibleParagraph(currentParagraph)
-        // After content replacement, transition in (opacity: 1)
+        setDisplayedStepIndex(currentStreamingStepIndex)
         setTransitioning(false)
       }, 150)
 
       return () => clearTimeout(timeout)
     } else if (!loading) {
-      // Ensure the last state is captured when streaming stops
-      setVisibleParagraph(currentParagraph)
+      // When streaming stops, ensure we show the final state
+      setDisplayedStepIndex(currentStreamingStepIndex)
     }
-    // Update immediately on initial render or if content is stable
-    if (!loading || streamingParagraphs.length <= 1) {
-      setVisibleParagraph(currentParagraph)
-    }
-  }, [currentParagraph, loading, visibleParagraph, streamingParagraphs.length])
+  }, [currentStreamingStepIndex, loading, displayedStepIndex])
 
-  // Check if we are currently streaming but haven't received enough content for a meaningful paragraph
-  const isInitialStreaming =
-    loading && currentParagraph.length === 0 && steps?.length === 0
+  // Determine if the block is truly empty (streaming started but no content/steps yet)
+  const isStreamingEmpty = loading && stepsWithoutDone.length === 0
 
-  // If loading but we have no content yet, hide the component until the first content piece arrives.
-  if (isInitialStreaming) {
-    return null
+  // If loading started but no content or steps have arrived yet, display the non-expandable 'Thinking...' block
+  if (isStreamingEmpty) {
+    return (
+      <div className="mx-auto w-full break-words">
+        <div className="mb-4 rounded-lg bg-main-view-fg/4 border border-dashed border-main-view-fg/10 p-2 flex items-center gap-3">
+          <Loader className="size-4 animate-spin text-main-view-fg/60" />
+          <span className="font-medium text-main-view-fg/80">
+            {t('thinking')}...
+          </span>
+        </div>
+      </div>
+    )
   }
+
+  // If not loading, and there are no steps, hide the block entirely.
+  const hasContent = steps.length > 0
+  if (!loading && !hasContent) return null
 
   const handleClick = () => {
     // Only allow toggling expansion if not currently loading
@@ -150,12 +137,9 @@ const ThinkingBlock = ({
   }
 
   // --- Rendering Functions for Expanded View ---
-
   const renderStepContent = (step: ThoughtStep, index: number) => {
     if (step.type === 'done') {
       const timeInSeconds = formatDuration(step.time ?? 0)
-
-      // TODO: Add translations
       const timeDisplay =
         timeInSeconds > 0
           ? `(${t('for')} ${timeInSeconds} ${t('seconds')})`
@@ -163,9 +147,8 @@ const ThinkingBlock = ({
 
       return (
         <div key={index} className="flex items-center gap-2 mt-2 text-accent">
-          {/* Use Check icon for done state */}
           <Check className="size-4" />
-          <span className="font-medium">{t('common:done')}</span>
+          <span className="font-medium">{t('done')}</span>
           {timeDisplay && (
             <span className="text-main-view-fg/60 text-xs">{timeDisplay}</span>
           )}
@@ -222,7 +205,6 @@ const ThinkingBlock = ({
     const timeInSeconds = formatDuration(duration ?? 0)
 
     if (timeInSeconds > 0) {
-      // Ensure translated strings are used correctly
       return `${t('thought')} ${t('for')} ${timeInSeconds} ${t('seconds')}`
     }
     return t('thought')
@@ -244,7 +226,6 @@ const ThinkingBlock = ({
           >
             {/* Display chevron only if not loading AND steps exist to expand */}
             {!loading &&
-              steps &&
               steps.length > 0 &&
               (isExpanded ? (
                 <ChevronUp className="size-4 text-main-view-fg/60" />
@@ -255,23 +236,30 @@ const ThinkingBlock = ({
           </button>
         </div>
 
-        {/* Streaming/Condensed View (Visible ONLY when loading) */}
-        {loading && (
+        {/* Streaming/Condensed View - shows current step one at a time */}
+        {loading && currentStep && displayedStepIndex >= 0 && (
           <div
             className={cn(
               'mt-2 pl-6 pr-4 text-main-view-fg/60 transition-opacity duration-150 ease-in',
               transitioning ? 'opacity-0' : 'opacity-100'
             )}
           >
-            <RenderMarkdown content={visibleParagraph} />
+            <div className="relative border-l border-dashed border-main-view-fg/20 ml-1.5">
+              <div className="relative pl-6 pb-2">
+                {/* Bullet point */}
+                <div className="absolute left-[-5px] top-[10px] size-2 rounded-full bg-main-view-fg/60" />
+                {/* Current step content */}
+                {renderStepContent(currentStep, displayedStepIndex)}
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Expanded View (Req 5) */}
+        {/* Expanded View - shows all steps */}
         {isExpanded && !loading && (
           <div className="mt-2 pl-6 pr-4 text-main-view-fg/60">
             <div className="relative border-l border-dashed border-main-view-fg/20 ml-1.5">
-              {steps?.map((step, index) => (
+              {steps.map((step, index) => (
                 <div key={index} className="relative pl-6 pb-2">
                   {/* Bullet point/Icon position relative to line */}
                   <div

@@ -7,7 +7,7 @@ import { useAppState } from '@/hooks/useAppState'
 import { cn } from '@/lib/utils'
 import { useMessages } from '@/hooks/useMessages'
 import ThinkingBlock from '@/containers/ThinkingBlock'
-import ToolCallBlock from '@/containers/ToolCallBlock'
+// import ToolCallBlock from '@/containers/ToolCallBlock'
 import { useChat } from '@/hooks/useChat'
 import {
   EditMessageDialog,
@@ -229,7 +229,7 @@ export const ThreadContent = memo(
         while (toSendMessage && toSendMessage?.role !== 'user') {
           deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
           toSendMessage = threadMessages.pop()
-          // Stop deletion when encountering an assistant message that isn’t a tool call
+          // Stop deletion when encountering an assistant message that isn't a tool call
           if (
             toSendMessage &&
             toSendMessage.role === 'assistant' &&
@@ -277,12 +277,11 @@ export const ThreadContent = memo(
           steps.push({
             type: 'tool_call',
             content: call.tool?.function?.name || 'Tool Call',
-            metadata: call.tool?.function?.arguments as string, // Arguments are typically a JSON string
+            metadata: call.tool?.function?.arguments as string,
           })
 
           // Tool Output Step
           if (call.response) {
-            // Response object usually needs stringifying for display
             const outputContent =
               typeof call.response === 'string'
                 ? call.response
@@ -312,10 +311,12 @@ export const ThreadContent = memo(
       isToolCalls,
       item.metadata,
       isStreamingThisThread,
-      t,
       hasReasoning,
     ])
     // END: Constructing allSteps
+
+    // Determine if we should show the thinking block (has reasoning OR tool calls)
+    const shouldShowThinkingBlock = hasReasoning || isToolCalls
 
     return (
       <Fragment>
@@ -451,19 +452,20 @@ export const ThreadContent = memo(
               </div>
             )}
 
-            {hasReasoning && (
+            {/* Single unified ThinkingBlock for both reasoning and tool calls */}
+            {shouldShowThinkingBlock && (
               <ThinkingBlock
                 id={
                   item.isLastMessage
-                    ? `${item.thread_id}-last-${reasoningSegment!.slice(0, 50).replace(/\s/g, '').slice(-10)}`
+                    ? `${item.thread_id}-last-${(reasoningSegment || text).slice(0, 50).replace(/\s/g, '').slice(-10)}`
                     : `${item.thread_id}-${item.index ?? item.id}`
                 }
-                text={reasoningSegment!}
-                steps={allSteps} // Pass structured steps
-                loading={isStreamingThisThread} // Pass streaming status
+                text={reasoningSegment || ''}
+                steps={allSteps}
+                loading={isStreamingThisThread}
                 duration={
                   item.metadata?.totalThinkingTime as number | undefined
-                } // Pass calculated duration
+                }
               />
             )}
 
@@ -471,31 +473,6 @@ export const ThreadContent = memo(
               content={textSegment.replace('</think>', '')}
               components={linkComponents}
             />
-
-            {/* Only render external ToolCallBlocks if there is NO dedicated reasoning block 
-                (i.e., when tools are streamed as standalone output and are NOT captured by ThinkingBlock). */}
-            {!hasReasoning && isToolCalls && item.metadata?.tool_calls ? (
-              <>
-                {(item.metadata.tool_calls as ToolCall[]).map((toolCall) => (
-                  <ToolCallBlock
-                    id={toolCall.tool?.id ?? 0}
-                    key={toolCall.tool?.id}
-                    name={
-                      (item.streamTools?.tool_calls?.function?.name ||
-                        toolCall.tool?.function?.name) ??
-                      ''
-                    }
-                    args={
-                      item.streamTools?.tool_calls?.function?.arguments ||
-                      toolCall.tool?.function?.arguments ||
-                      undefined
-                    }
-                    result={JSON.stringify(toolCall.response)}
-                    loading={toolCall.state === 'pending'}
-                  />
-                ))}
-              </>
-            ) : null}
 
             {!isToolCalls && (
               <div className="flex items-center gap-2 text-main-view-fg/60 text-xs">
