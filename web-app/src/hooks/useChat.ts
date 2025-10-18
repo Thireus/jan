@@ -93,66 +93,74 @@ export const useChat = () => {
   const setModelLoadError = useModelLoad((state) => state.setModelLoadError)
   const router = useRouter()
 
-  const getCurrentThread = useCallback(async (projectId?: string) => {
-    let currentThread = retrieveThread()
+  const getCurrentThread = useCallback(
+    async (projectId?: string) => {
+      let currentThread = retrieveThread()
 
-    // Check if we're in temporary chat mode
-    const isTemporaryMode = window.location.search.includes(`${TEMPORARY_CHAT_QUERY_ID}=true`)
-
-    // Clear messages for existing temporary thread on reload to ensure fresh start
-    if (isTemporaryMode && currentThread?.id === TEMPORARY_CHAT_ID) {
-      setMessages(TEMPORARY_CHAT_ID, [])
-    }
-
-    if (!currentThread) {
-      // Get prompt directly from store when needed
-      const currentPrompt = usePrompt.getState().prompt
-      const currentAssistant = useAssistant.getState().currentAssistant
-      const assistants = useAssistant.getState().assistants
-      const selectedModel = useModelProvider.getState().selectedModel
-      const selectedProvider = useModelProvider.getState().selectedProvider
-
-      // Get project metadata if projectId is provided
-      let projectMetadata: { id: string; name: string; updated_at: number } | undefined
-      if (projectId) {
-        const project = await serviceHub.projects().getProjectById(projectId)
-        if (project) {
-          projectMetadata = {
-            id: project.id,
-            name: project.name,
-            updated_at: project.updated_at,
-          }
-        }
-      }
-
-      currentThread = await createThread(
-        {
-          id: selectedModel?.id ?? defaultModel(selectedProvider),
-          provider: selectedProvider,
-        },
-        isTemporaryMode ? 'Temporary Chat' : currentPrompt,
-        assistants.find((a) => a.id === currentAssistant?.id) || assistants[0],
-        projectMetadata,
-        isTemporaryMode // pass temporary flag
+      // Check if we're in temporary chat mode
+      const isTemporaryMode = window.location.search.includes(
+        `${TEMPORARY_CHAT_QUERY_ID}=true`
       )
 
-      // Clear messages for temporary chat to ensure fresh start on reload
+      // Clear messages for existing temporary thread on reload to ensure fresh start
       if (isTemporaryMode && currentThread?.id === TEMPORARY_CHAT_ID) {
         setMessages(TEMPORARY_CHAT_ID, [])
       }
 
-      // Set flag for temporary chat navigation
-      if (currentThread.id === TEMPORARY_CHAT_ID) {
-        sessionStorage.setItem('temp-chat-nav', 'true')
-      }
+      if (!currentThread) {
+        // Get prompt directly from store when needed
+        const currentPrompt = usePrompt.getState().prompt
+        const currentAssistant = useAssistant.getState().currentAssistant
+        const assistants = useAssistant.getState().assistants
+        const selectedModel = useModelProvider.getState().selectedModel
+        const selectedProvider = useModelProvider.getState().selectedProvider
 
-      router.navigate({
-        to: route.threadsDetail,
-        params: { threadId: currentThread.id },
-      })
-    }
-    return currentThread
-  }, [createThread, retrieveThread, router, setMessages, serviceHub])
+        // Get project metadata if projectId is provided
+        let projectMetadata:
+          | { id: string; name: string; updated_at: number }
+          | undefined
+        if (projectId) {
+          const project = await serviceHub.projects().getProjectById(projectId)
+          if (project) {
+            projectMetadata = {
+              id: project.id,
+              name: project.name,
+              updated_at: project.updated_at,
+            }
+          }
+        }
+
+        currentThread = await createThread(
+          {
+            id: selectedModel?.id ?? defaultModel(selectedProvider),
+            provider: selectedProvider,
+          },
+          isTemporaryMode ? 'Temporary Chat' : currentPrompt,
+          assistants.find((a) => a.id === currentAssistant?.id) ||
+            assistants[0],
+          projectMetadata,
+          isTemporaryMode // pass temporary flag
+        )
+
+        // Clear messages for temporary chat to ensure fresh start on reload
+        if (isTemporaryMode && currentThread?.id === TEMPORARY_CHAT_ID) {
+          setMessages(TEMPORARY_CHAT_ID, [])
+        }
+
+        // Set flag for temporary chat navigation
+        if (currentThread.id === TEMPORARY_CHAT_ID) {
+          sessionStorage.setItem('temp-chat-nav', 'true')
+        }
+
+        router.navigate({
+          to: route.threadsDetail,
+          params: { threadId: currentThread.id },
+        })
+      }
+      return currentThread
+    },
+    [createThread, retrieveThread, router, setMessages, serviceHub]
+  )
 
   const restartModel = useCallback(
     async (provider: ProviderObject, modelId: string) => {
@@ -297,7 +305,9 @@ export const useChat = () => {
               updateAttachmentProcessing(img.name, 'processing')
             }
             // Upload image, get id/URL
-            const res = await serviceHub.uploads().ingestImage(activeThread.id, img)
+            const res = await serviceHub
+              .uploads()
+              .ingestImage(activeThread.id, img)
             processedAttachments.push({
               ...img,
               id: res.id,
@@ -313,7 +323,9 @@ export const useChat = () => {
               updateAttachmentProcessing(img.name, 'error')
             }
             const desc = err instanceof Error ? err.message : String(err)
-            toast.error('Failed to ingest image attachment', { description: desc })
+            toast.error('Failed to ingest image attachment', {
+              description: desc,
+            })
             return
           }
         }
@@ -394,6 +406,9 @@ export const useChat = () => {
       updateThreadTimestamp(activeThread.id)
       usePrompt.getState().setPrompt('')
       const selectedModel = useModelProvider.getState().selectedModel
+
+      const startTime = Date.now() // Start timer here
+
       try {
         if (selectedModel?.id) {
           updateLoadingModel(true)
@@ -708,14 +723,22 @@ export const useChat = () => {
             throw new Error('No response received from the model')
           }
 
+          const totalThinkingTime = Date.now() - startTime // Calculate total elapsed time
+
           // Create a final content object for adding to the thread
+          const messageMetadata: Record<string, any> = {
+            tokenSpeed: useAppState.getState().tokenSpeed,
+            assistant: currentAssistant,
+          }
+
+          if (accumulatedText.includes('<think>') || toolCalls.length > 0) {
+            messageMetadata.totalThinkingTime = totalThinkingTime
+          }
+
           const finalContent = newAssistantThreadContent(
             activeThread.id,
             accumulatedText,
-            {
-              tokenSpeed: useAppState.getState().tokenSpeed,
-              assistant: currentAssistant,
-            }
+            messageMetadata
           )
 
           builder.addAssistantMessage(accumulatedText, undefined, toolCalls)
@@ -736,6 +759,14 @@ export const useChat = () => {
             allowAllMCPPermissions,
             isProactiveMode
           )
+
+          if (updatedMessage && updatedMessage.metadata) {
+            if (finalContent.metadata?.totalThinkingTime !== undefined) {
+              updatedMessage.metadata.totalThinkingTime =
+                finalContent.metadata.totalThinkingTime
+            }
+          }
+
           addMessage(updatedMessage ?? finalContent)
           updateStreamingContent(emptyThreadContent)
           updatePromptProgress(undefined)

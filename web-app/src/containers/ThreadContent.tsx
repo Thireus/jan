@@ -28,6 +28,28 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { extractFilesFromPrompt } from '@/lib/fileMetadata'
 import { createImageAttachment } from '@/types/attachment'
+import { extractThinkingContent } from '@/lib/utils'
+
+// Define ToolCall interface for type safety when accessing metadata
+interface ToolCall {
+  tool?: {
+    id: number
+    function?: {
+      name: string
+      arguments?: object | string
+    }
+  }
+  response?: any
+  state?: 'pending' | 'completed'
+}
+
+// Define ThoughtStep type
+type ThoughtStep = {
+  type: 'thought' | 'tool_call' | 'tool_output' | 'done'
+  content: string
+  metadata?: any
+  time?: number
+}
 
 const CopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
@@ -147,6 +169,9 @@ export const ThreadContent = memo(
       return { reasoningSegment: undefined, textSegment: text }
     }, [text])
 
+    // Check if reasoning segment is actually present (i.e., non-empty string)
+    const hasReasoning = !!reasoningSegment
+
     const getMessages = useMessages((state) => state.getMessages)
     const deleteMessage = useMessages((state) => state.deleteMessage)
     const sendMessage = useChat()
@@ -164,7 +189,8 @@ export const ThreadContent = memo(
         deleteMessage(toSendMessage.thread_id, toSendMessage.id ?? '')
         // Extract text content and any attachments
         const rawText =
-          toSendMessage.content?.find((c) => c.type === 'text')?.text?.value || ''
+          toSendMessage.content?.find((c) => c.type === 'text')?.text?.value ||
+          ''
         const { cleanPrompt: textContent } = extractFilesFromPrompt(rawText)
         const attachments = toSendMessage.content
           ?.filter((c) => (c.type === 'image_url' && c.image_url?.url) || false)
@@ -225,6 +251,71 @@ export const ThreadContent = memo(
     const assistant = item.metadata?.assistant as
       | { avatar?: React.ReactNode; name?: React.ReactNode }
       | undefined
+
+    // START: Constructing allSteps for ThinkingBlock (Req 5)
+    const allSteps: ThoughtStep[] = useMemo(() => {
+      const steps: ThoughtStep[] = []
+
+      // 1. Extract thought paragraphs
+      const thoughtText = extractThinkingContent(reasoningSegment || '')
+      const thoughtParagraphs = thoughtText
+        ? thoughtText
+            .split(/\n\s*\n/)
+            .filter((s) => s.trim().length > 0)
+            .map((content) => ({
+              type: 'thought' as const,
+              content: content.trim(),
+            }))
+        : []
+      steps.push(...thoughtParagraphs)
+
+      // 2. Extract tool steps
+      if (isToolCalls && item.metadata?.tool_calls) {
+        const toolCalls = item.metadata.tool_calls as ToolCall[]
+        for (const call of toolCalls) {
+          // Tool Call Step
+          steps.push({
+            type: 'tool_call',
+            content: call.tool?.function?.name || 'Tool Call',
+            metadata: call.tool?.function?.arguments as string, // Arguments are typically a JSON string
+          })
+
+          // Tool Output Step
+          if (call.response) {
+            // Response object usually needs stringifying for display
+            const outputContent =
+              typeof call.response === 'string'
+                ? call.response
+                : JSON.stringify(call.response, null, 2)
+
+            steps.push({
+              type: 'tool_output',
+              content: outputContent,
+            })
+          }
+        }
+      }
+
+      // 3. Add Done step if not streaming
+      const totalTime = item.metadata?.totalThinkingTime as number | undefined
+      if (!isStreamingThisThread && (hasReasoning || isToolCalls)) {
+        steps.push({
+          type: 'done',
+          content: 'Done',
+          time: totalTime,
+        })
+      }
+
+      return steps
+    }, [
+      reasoningSegment,
+      isToolCalls,
+      item.metadata,
+      isStreamingThisThread,
+      t,
+      hasReasoning,
+    ])
+    // END: Constructing allSteps
 
     return (
       <Fragment>
@@ -360,14 +451,19 @@ export const ThreadContent = memo(
               </div>
             )}
 
-            {reasoningSegment && (
+            {hasReasoning && (
               <ThinkingBlock
                 id={
                   item.isLastMessage
-                    ? `${item.thread_id}-last-${reasoningSegment.slice(0, 50).replace(/\s/g, '').slice(-10)}`
+                    ? `${item.thread_id}-last-${reasoningSegment!.slice(0, 50).replace(/\s/g, '').slice(-10)}`
                     : `${item.thread_id}-${item.index ?? item.id}`
                 }
-                text={reasoningSegment}
+                text={reasoningSegment!}
+                steps={allSteps} // Pass structured steps
+                loading={isStreamingThisThread} // Pass streaming status
+                duration={
+                  item.metadata?.totalThinkingTime as number | undefined
+                } // Pass calculated duration
               />
             )}
 
@@ -376,7 +472,9 @@ export const ThreadContent = memo(
               components={linkComponents}
             />
 
-            {isToolCalls && item.metadata?.tool_calls ? (
+            {/* Only render external ToolCallBlocks if there is NO dedicated reasoning block 
+                (i.e., when tools are streamed as standalone output and are NOT captured by ThinkingBlock). */}
+            {!hasReasoning && isToolCalls && item.metadata?.tool_calls ? (
               <>
                 {(item.metadata.tool_calls as ToolCall[]).map((toolCall) => (
                   <ToolCallBlock
