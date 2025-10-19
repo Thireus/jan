@@ -7,6 +7,7 @@ import { useAppState } from '@/hooks/useAppState'
 import { cn } from '@/lib/utils'
 import { useMessages } from '@/hooks/useMessages'
 import ThinkingBlock from '@/containers/ThinkingBlock'
+// import ToolCallBlock from '@/containers/ToolCallBlock'
 import { useChat } from '@/hooks/useChat'
 import {
   EditMessageDialog,
@@ -251,7 +252,7 @@ export const ThreadContent = memo(
       | { avatar?: React.ReactNode; name?: React.ReactNode }
       | undefined
 
-    // Constructing allSteps for ThinkingBlock
+    // Constructing allSteps for ThinkingBlock (Fixing Interleaving and Done step)
     const allSteps: ThoughtStep[] = useMemo(() => {
       const steps: ThoughtStep[] = []
 
@@ -267,7 +268,7 @@ export const ThreadContent = memo(
 
       let thoughtIndex = 0
 
-      // 2. Interleave tool steps and thought steps
+      // Interleave tool steps and thought steps
       if (isToolCalls && item.metadata?.tool_calls) {
         const toolCalls = item.metadata.tool_calls as ToolCall[]
 
@@ -312,19 +313,24 @@ export const ThreadContent = memo(
         thoughtIndex++
       }
 
-      // Add Done step if not streaming AND the reasoning/tooling process is concluded
+      // Add Done step only if the sequence is concluded for display
       const totalTime = item.metadata?.totalThinkingTime as number | undefined
+      const lastStepType = steps[steps.length - 1]?.type
 
-      // If the thread is not streaming, and we had steps or final text output, we add 'done'.
-      if (
-        !isStreamingThisThread &&
-        (hasReasoning || isToolCalls || textSegment)
-      ) {
-        steps.push({
-          type: 'done',
-          content: 'Done',
-          time: totalTime,
-        })
+      // If the message is finalized (not streaming) AND the last step was a tool output
+      // AND there is no subsequent final text, we suppress 'done' to allow seamless transition
+      // to the next assistant message/thought block.
+      const endsInToolOutputWithoutFinalText =
+        lastStepType === 'tool_output' && textSegment.length === 0
+
+      if (!isStreamingThisThread && (hasReasoning || isToolCalls)) {
+        if (textSegment.length > 0 || !endsInToolOutputWithoutFinalText) {
+          steps.push({
+            type: 'done',
+            content: 'Done',
+            time: totalTime,
+          })
+        }
       }
 
       return steps
@@ -338,7 +344,7 @@ export const ThreadContent = memo(
     ])
     // END: Constructing allSteps
 
-    // Determine if reasoning phase is actively loading (Req 2)
+    // Determine if reasoning phase is actively loading
     // Loading is true only if streaming is happening AND we haven't started outputting final text yet.
     const isReasoningActiveLoading =
       isStreamingThisThread && textSegment.length === 0

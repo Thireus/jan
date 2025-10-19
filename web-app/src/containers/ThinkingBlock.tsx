@@ -1,7 +1,6 @@
 import { ChevronDown, ChevronUp, Loader, Check } from 'lucide-react'
 import { create } from 'zustand'
 import { RenderMarkdown } from './RenderMarkdown'
-// import { useAppState } from '@/hooks/useAppState'
 import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useMemo } from 'react'
 import { cn } from '@/lib/utils'
@@ -49,7 +48,6 @@ const formatDuration = (ms: number) => {
 
 const ThinkingBlock = ({
   id,
-  // text, // Unused internally
   steps = [],
   loading: propLoading,
   duration,
@@ -61,8 +59,8 @@ const ThinkingBlock = ({
   // Actual loading state comes from prop, determined by whether final text started streaming (Req 2)
   const loading = propLoading
 
-  // Set default expansion state: expanded if loading, collapsed if done.
-  // If loading transitions to false (textSegment starts), this defaults to collapsed if state is absent.
+  // Set default expansion state: collapsed if done (not loading).
+  // If loading transitions to false (textSegment starts), this defaults to collapsed.
   const isExpanded = thinkingState[id] ?? (loading ? true : false)
 
   // Filter out the 'done' step for streaming display
@@ -70,15 +68,14 @@ const ThinkingBlock = ({
     () => steps.filter((step) => step.type !== 'done'),
     [steps]
   )
-
   const N = stepsWithoutDone.length
 
-  // Determine the step to display in the condensed streaming view (Req 3)
-  // Show step N-2 when N >= 2 (i.e., when step N-1 is streaming, show the previously finished step)
+  // Determine the step to display in the condensed streaming view
+  // When step N-1 is streaming, show the previously finished step (N-2).
   const stepToRenderWhenStreaming = useMemo(() => {
-    if (!loading) return null // Only apply this logic when actively loading
+    if (!loading) return null
+    // If N >= 2, the N-1 step is currently streaming, so we show the finished step N-2.
     if (N >= 2) {
-      // Show the penultimate step (index N-2)
       return stepsWithoutDone[N - 2]
     }
     return null
@@ -214,11 +211,7 @@ const ThinkingBlock = ({
 
         {/* Streaming/Condensed View - shows previous finished step */}
         {loading && stepToRenderWhenStreaming && (
-          <div
-            className={cn(
-              'mt-2 pl-6 pr-4 text-main-view-fg/60 transition-opacity duration-150 ease-in'
-            )}
-          >
+          <div className={cn('mt-2 pl-6 pr-4 text-main-view-fg/60')}>
             <div className="relative border-l border-dashed border-main-view-fg/20 ml-1.5">
               <div className="relative pl-6 pb-2">
                 {/* Bullet point */}
