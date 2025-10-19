@@ -7,7 +7,6 @@ import { useAppState } from '@/hooks/useAppState'
 import { cn } from '@/lib/utils'
 import { useMessages } from '@/hooks/useMessages'
 import ThinkingBlock from '@/containers/ThinkingBlock'
-// import ToolCallBlock from '@/containers/ToolCallBlock'
 import { useChat } from '@/hooks/useChat'
 import {
   EditMessageDialog,
@@ -252,27 +251,36 @@ export const ThreadContent = memo(
       | { avatar?: React.ReactNode; name?: React.ReactNode }
       | undefined
 
-    // START: Constructing allSteps for ThinkingBlock (Req 5)
+    // Constructing allSteps for ThinkingBlock
     const allSteps: ThoughtStep[] = useMemo(() => {
       const steps: ThoughtStep[] = []
 
-      // 1. Extract thought paragraphs
+      // Extract thought paragraphs from reasoningSegment. We assume these are ordered
+      // relative to tool calls.
       const thoughtText = extractThinkingContent(reasoningSegment || '')
       const thoughtParagraphs = thoughtText
         ? thoughtText
             .split(/\n\s*\n/)
             .filter((s) => s.trim().length > 0)
-            .map((content) => ({
-              type: 'thought' as const,
-              content: content.trim(),
-            }))
+            .map((content) => content.trim())
         : []
-      steps.push(...thoughtParagraphs)
 
-      // 2. Extract tool steps
+      let thoughtIndex = 0
+
+      // 2. Interleave tool steps and thought steps
       if (isToolCalls && item.metadata?.tool_calls) {
         const toolCalls = item.metadata.tool_calls as ToolCall[]
+
         for (const call of toolCalls) {
+          // Check for thought chunk preceding this tool call
+          if (thoughtIndex < thoughtParagraphs.length) {
+            steps.push({
+              type: 'thought',
+              content: thoughtParagraphs[thoughtIndex],
+            })
+            thoughtIndex++
+          }
+
           // Tool Call Step
           steps.push({
             type: 'tool_call',
@@ -295,9 +303,23 @@ export const ThreadContent = memo(
         }
       }
 
-      // 3. Add Done step if not streaming
+      // Add remaining thoughts (e.g., final answer formulation thought)
+      while (thoughtIndex < thoughtParagraphs.length) {
+        steps.push({
+          type: 'thought',
+          content: thoughtParagraphs[thoughtIndex],
+        })
+        thoughtIndex++
+      }
+
+      // Add Done step if not streaming AND the reasoning/tooling process is concluded
       const totalTime = item.metadata?.totalThinkingTime as number | undefined
-      if (!isStreamingThisThread && (hasReasoning || isToolCalls)) {
+
+      // If the thread is not streaming, and we had steps or final text output, we add 'done'.
+      if (
+        !isStreamingThisThread &&
+        (hasReasoning || isToolCalls || textSegment)
+      ) {
         steps.push({
           type: 'done',
           content: 'Done',
@@ -312,11 +334,18 @@ export const ThreadContent = memo(
       item.metadata,
       isStreamingThisThread,
       hasReasoning,
+      textSegment,
     ])
     // END: Constructing allSteps
 
-    // Determine if we should show the thinking block (has reasoning OR tool calls)
-    const shouldShowThinkingBlock = hasReasoning || isToolCalls
+    // Determine if reasoning phase is actively loading (Req 2)
+    // Loading is true only if streaming is happening AND we haven't started outputting final text yet.
+    const isReasoningActiveLoading =
+      isStreamingThisThread && textSegment.length === 0
+
+    // Determine if we should show the thinking block (has reasoning OR tool calls OR currently loading reasoning)
+    const shouldShowThinkingBlock =
+      hasReasoning || isToolCalls || isReasoningActiveLoading
 
     return (
       <Fragment>
@@ -462,7 +491,7 @@ export const ThreadContent = memo(
                 }
                 text={reasoningSegment || ''}
                 steps={allSteps}
-                loading={isStreamingThisThread}
+                loading={isReasoningActiveLoading} // Req 2: False if textSegment is starting
                 duration={
                   item.metadata?.totalThinkingTime as number | undefined
                 }

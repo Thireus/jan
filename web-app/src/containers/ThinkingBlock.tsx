@@ -1,10 +1,9 @@
 import { ChevronDown, ChevronUp, Loader, Check } from 'lucide-react'
 import { create } from 'zustand'
 import { RenderMarkdown } from './RenderMarkdown'
-import { useAppState } from '@/hooks/useAppState'
+// import { useAppState } from '@/hooks/useAppState'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-// import { extractThinkingContent } from '@/lib/utils'
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo } from 'react'
 import { cn } from '@/lib/utils'
 
 // Define ThoughtStep type
@@ -50,26 +49,20 @@ const formatDuration = (ms: number) => {
 
 const ThinkingBlock = ({
   id,
-  text,
+  // text, // Unused internally
   steps = [],
   loading: propLoading,
   duration,
 }: Props) => {
   const thinkingState = useThinkingStore((state) => state.thinkingState)
   const setThinkingState = useThinkingStore((state) => state.setThinkingState)
-  const isStreamingApp = useAppState((state) => !!state.streamingContent)
   const { t } = useTranslation()
 
-  // Determine actual loading state
-  const hasThinkTag = text.includes('<think>') && !text.includes('</think>')
-  const hasAnalysisChannel =
-    text.includes('<|channel|>analysis<|message|>') &&
-    !text.includes('<|start|>assistant<|channel|>final<|message|>')
-
-  const loading =
-    propLoading ?? ((hasThinkTag || hasAnalysisChannel) && isStreamingApp)
+  // Actual loading state comes from prop, determined by whether final text started streaming (Req 2)
+  const loading = propLoading
 
   // Set default expansion state: expanded if loading, collapsed if done.
+  // If loading transitions to false (textSegment starts), this defaults to collapsed if state is absent.
   const isExpanded = thinkingState[id] ?? (loading ? true : false)
 
   // Filter out the 'done' step for streaming display
@@ -78,38 +71,21 @@ const ThinkingBlock = ({
     [steps]
   )
 
-  // Get the current step being streamed (last step that's not 'done')
-  const currentStreamingStepIndex = stepsWithoutDone.length - 1
-  const currentStep =
-    currentStreamingStepIndex >= 0
-      ? stepsWithoutDone[currentStreamingStepIndex]
-      : null
+  const N = stepsWithoutDone.length
 
-  // Track which step index we're displaying
-  const [displayedStepIndex, setDisplayedStepIndex] = useState(
-    currentStreamingStepIndex
-  )
-  const [transitioning, setTransitioning] = useState(false)
-
-  // When a new step arrives during streaming, animate the transition
-  useEffect(() => {
-    if (loading && currentStreamingStepIndex > displayedStepIndex) {
-      setTransitioning(true)
-
-      const timeout = setTimeout(() => {
-        setDisplayedStepIndex(currentStreamingStepIndex)
-        setTransitioning(false)
-      }, 150)
-
-      return () => clearTimeout(timeout)
-    } else if (!loading) {
-      // When streaming stops, ensure we show the final state
-      setDisplayedStepIndex(currentStreamingStepIndex)
+  // Determine the step to display in the condensed streaming view (Req 3)
+  // Show step N-2 when N >= 2 (i.e., when step N-1 is streaming, show the previously finished step)
+  const stepToRenderWhenStreaming = useMemo(() => {
+    if (!loading) return null // Only apply this logic when actively loading
+    if (N >= 2) {
+      // Show the penultimate step (index N-2)
+      return stepsWithoutDone[N - 2]
     }
-  }, [currentStreamingStepIndex, loading, displayedStepIndex])
+    return null
+  }, [loading, N, stepsWithoutDone])
 
   // Determine if the block is truly empty (streaming started but no content/steps yet)
-  const isStreamingEmpty = loading && stepsWithoutDone.length === 0
+  const isStreamingEmpty = loading && N === 0
 
   // If loading started but no content or steps have arrived yet, display the non-expandable 'Thinking...' block
   if (isStreamingEmpty) {
@@ -236,20 +212,19 @@ const ThinkingBlock = ({
           </button>
         </div>
 
-        {/* Streaming/Condensed View - shows current step one at a time */}
-        {loading && currentStep && displayedStepIndex >= 0 && (
+        {/* Streaming/Condensed View - shows previous finished step */}
+        {loading && stepToRenderWhenStreaming && (
           <div
             className={cn(
-              'mt-2 pl-6 pr-4 text-main-view-fg/60 transition-opacity duration-150 ease-in',
-              transitioning ? 'opacity-0' : 'opacity-100'
+              'mt-2 pl-6 pr-4 text-main-view-fg/60 transition-opacity duration-150 ease-in'
             )}
           >
             <div className="relative border-l border-dashed border-main-view-fg/20 ml-1.5">
               <div className="relative pl-6 pb-2">
                 {/* Bullet point */}
                 <div className="absolute left-[-5px] top-[10px] size-2 rounded-full bg-main-view-fg/60" />
-                {/* Current step content */}
-                {renderStepContent(currentStep, displayedStepIndex)}
+                {/* Previous completed step content */}
+                {renderStepContent(stepToRenderWhenStreaming, N - 2)}
               </div>
             </div>
           </div>
