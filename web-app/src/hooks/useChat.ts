@@ -425,10 +425,8 @@ export const useChat = () => {
         // Using addUserMessage to respect legacy code. Should be using the userContent above.
         if (troubleshooting) builder.addUserMessage(userContent)
 
-        let isCompleted = false
-
         // Filter tools based on model capabilities and available tools for this thread
-        let availableTools = selectedModel?.capabilities?.includes('tools')
+        const availableTools = selectedModel?.capabilities?.includes('tools')
           ? useAppState.getState().tools.filter((tool) => {
               const disabledTools = getDisabledToolsForThread(activeThread.id)
               return !disabledTools.includes(tool.name)
@@ -437,15 +435,20 @@ export const useChat = () => {
 
         // Check if proactive mode is enabled
         const isProactiveMode =
-          (selectedModel?.capabilities?.includes('tools') ?? false) &&
-          (selectedModel?.capabilities?.includes('vision') ?? false) &&
-          (selectedModel?.capabilities?.includes('proactive') ?? false)
+          selectedModel?.capabilities?.includes('proactive') ?? false
 
         // Proactive mode: Capture initial screenshot/snapshot before first LLM call
-        if (isProactiveMode && availableTools.length > 0 && !abortController.signal.aborted) {
-          console.log('Proactive mode: Capturing initial screenshots before LLM call')
+        if (
+          isProactiveMode &&
+          availableTools.length > 0 &&
+          !abortController.signal.aborted
+        ) {
+          console.log(
+            'Proactive mode: Capturing initial screenshots before LLM call'
+          )
           try {
-            const initialScreenshots = await captureProactiveScreenshots(abortController)
+            const initialScreenshots =
+              await captureProactiveScreenshots(abortController)
 
             // Add initial screenshots to builder
             for (const screenshot of initialScreenshots) {
@@ -459,131 +462,91 @@ export const useChat = () => {
           }
         }
 
-        let assistantLoopSteps = 0
+        // The agent logic is now self-contained within postMessageProcessing.
+        // We no longer need a `while` loop here.
 
-        while (
-          !isCompleted &&
-          !abortController.signal.aborted &&
-          activeProvider
-        ) {
-          const modelConfig = activeProvider.models.find(
-            (m) => m.id === selectedModel?.id
-          )
-          assistantLoopSteps += 1
+        if (abortController.signal.aborted || !activeProvider) return
 
-          const modelSettings = modelConfig?.settings
-            ? Object.fromEntries(
-                Object.entries(modelConfig.settings)
-                  .filter(
-                    ([key, value]) =>
-                      key !== 'ctx_len' &&
-                      key !== 'ngl' &&
-                      value.controller_props?.value !== undefined &&
-                      value.controller_props?.value !== null &&
-                      value.controller_props?.value !== ''
-                  )
-                  .map(([key, value]) => [key, value.controller_props?.value])
-              )
-            : undefined
+        const modelConfig = activeProvider.models.find(
+          (m) => m.id === selectedModel?.id
+        )
 
-          const completion = await sendCompletion(
-            activeThread,
-            activeProvider,
-            builder.getMessages(),
-            abortController,
-            availableTools,
-            currentAssistant?.parameters?.stream === false ? false : true,
-            {
-              ...modelSettings,
-              ...(currentAssistant?.parameters || {}),
-            } as unknown as Record<string, object>
-          )
+        const modelSettings = modelConfig?.settings
+          ? Object.fromEntries(
+              Object.entries(modelConfig.settings)
+                .filter(
+                  ([key, value]) =>
+                    key !== 'ctx_len' &&
+                    key !== 'ngl' &&
+                    value.controller_props?.value !== undefined &&
+                    value.controller_props?.value !== null &&
+                    value.controller_props?.value !== ''
+                )
+                .map(([key, value]) => [key, value.controller_props?.value])
+            )
+          : undefined
 
-          if (!completion) throw new Error('No completion received')
-          let accumulatedText = ''
-          const currentCall: ChatCompletionMessageToolCall | null = null
-          const toolCalls: ChatCompletionMessageToolCall[] = []
-          const timeToFirstToken = Date.now()
-          let tokenUsage: CompletionUsage | undefined = undefined
-          try {
-            if (isCompletionResponse(completion)) {
-              const message = completion.choices[0]?.message
-              accumulatedText = (message?.content as string) || ''
+        const completion = await sendCompletion(
+          activeThread,
+          activeProvider,
+          builder.getMessages(),
+          abortController,
+          availableTools,
+          currentAssistant?.parameters?.stream === false ? false : true,
+          {
+            ...modelSettings,
+            ...(currentAssistant?.parameters || {}),
+          } as unknown as Record<string, object>
+        )
 
-              // Handle reasoning field if there is one
-              const reasoning = extractReasoningFromMessage(message)
-              if (reasoning) {
-                accumulatedText =
-                  `<think>${reasoning}</think>` + accumulatedText
-              }
+        if (!completion) throw new Error('No completion received')
+        let accumulatedText = ''
+        const currentCall: ChatCompletionMessageToolCall | null = null
+        const toolCalls: ChatCompletionMessageToolCall[] = []
+        const timeToFirstToken = Date.now()
+        let tokenUsage: CompletionUsage | undefined = undefined
+        try {
+          if (isCompletionResponse(completion)) {
+            const message = completion.choices[0]?.message
+            accumulatedText = (message?.content as string) || ''
 
-              if (message?.tool_calls) {
-                toolCalls.push(...message.tool_calls)
-              }
-              if ('usage' in completion) {
-                tokenUsage = completion.usage
-              }
-            } else {
-              // High-throughput scheduler: batch UI updates on rAF (requestAnimationFrame)
-              let rafScheduled = false
-              let rafHandle: number | undefined
-              let pendingDeltaCount = 0
-              const reasoningProcessor = new ReasoningProcessor()
-              const scheduleFlush = () => {
-                if (rafScheduled || abortController.signal.aborted) return
-                rafScheduled = true
-                const doSchedule = (cb: () => void) => {
-                  if (typeof requestAnimationFrame !== 'undefined') {
-                    rafHandle = requestAnimationFrame(() => cb())
-                  } else {
-                    // Fallback for non-browser test environments
-                    const t = setTimeout(() => cb(), 0) as unknown as number
-                    rafHandle = t
-                  }
+            // Handle reasoning field if there is one
+            const reasoning = extractReasoningFromMessage(message)
+            if (reasoning) {
+              accumulatedText = `<think>${reasoning}</think>` + accumulatedText
+            }
+
+            if (message?.tool_calls) {
+              toolCalls.push(...message.tool_calls)
+            }
+            if ('usage' in completion) {
+              tokenUsage = completion.usage
+            }
+          } else {
+            // High-throughput scheduler: batch UI updates on rAF (requestAnimationFrame)
+            let rafScheduled = false
+            let rafHandle: number | undefined
+            let pendingDeltaCount = 0
+            const reasoningProcessor = new ReasoningProcessor()
+            const scheduleFlush = () => {
+              if (rafScheduled || abortController.signal.aborted) return
+              rafScheduled = true
+              const doSchedule = (cb: () => void) => {
+                if (typeof requestAnimationFrame !== 'undefined') {
+                  rafHandle = requestAnimationFrame(() => cb())
+                } else {
+                  // Fallback for non-browser test environments
+                  const t = setTimeout(() => cb(), 0) as unknown as number
+                  rafHandle = t
                 }
-                doSchedule(() => {
-                  // Check abort status before executing the scheduled callback
-                  if (abortController.signal.aborted) {
-                    rafScheduled = false
-                    return
-                  }
-
-                  const currentContent = newAssistantThreadContent(
-                    activeThread.id,
-                    accumulatedText,
-                    {
-                      tool_calls: toolCalls.map((e) => ({
-                        ...e,
-                        state: 'pending',
-                      })),
-                    }
-                  )
-                  updateStreamingContent(currentContent)
-                  if (tokenUsage) {
-                    setTokenSpeed(
-                      currentContent,
-                      tokenUsage.completion_tokens /
-                        Math.max((Date.now() - timeToFirstToken) / 1000, 1),
-                      tokenUsage.completion_tokens
-                    )
-                  } else if (pendingDeltaCount > 0) {
-                    updateTokenSpeed(currentContent, pendingDeltaCount)
-                  }
-                  pendingDeltaCount = 0
+              }
+              doSchedule(() => {
+                // Check abort status before executing the scheduled callback
+                if (abortController.signal.aborted) {
                   rafScheduled = false
-                })
-              }
-              const flushIfPending = () => {
-                if (!rafScheduled) return
-                if (
-                  typeof cancelAnimationFrame !== 'undefined' &&
-                  rafHandle !== undefined
-                ) {
-                  cancelAnimationFrame(rafHandle)
-                } else if (rafHandle !== undefined) {
-                  clearTimeout(rafHandle)
+                  return
                 }
-                // Do an immediate flush
+
                 const currentContent = newAssistantThreadContent(
                   activeThread.id,
                   accumulatedText,
@@ -607,179 +570,207 @@ export const useChat = () => {
                 }
                 pendingDeltaCount = 0
                 rafScheduled = false
-              }
-              try {
-                for await (const part of completion) {
-                  // Check if aborted before processing each part
-                  if (abortController.signal.aborted) {
-                    break
-                  }
-
-                  // Handle prompt progress if available
-                  if ('prompt_progress' in part && part.prompt_progress) {
-                    // Force immediate state update to ensure we see intermediate values
-                    flushSync(() => {
-                      updatePromptProgress(part.prompt_progress)
-                    })
-                    // Add a small delay to make progress visible
-                    await new Promise((resolve) => setTimeout(resolve, 100))
-                  }
-
-                  // Error message
-                  if (!part.choices) {
-                    throw new Error(
-                      'message' in part
-                        ? (part.message as string)
-                        : (JSON.stringify(part) ?? '')
-                    )
-                  }
-
-                  if ('usage' in part && part.usage) {
-                    tokenUsage = part.usage
-                  }
-
-                  if (part.choices[0]?.delta?.tool_calls) {
-                    extractToolCall(part, currentCall, toolCalls)
-                    // Schedule a flush to reflect tool update
-                    scheduleFlush()
-                  }
-                  const deltaReasoning =
-                    reasoningProcessor.processReasoningChunk(part)
-                  if (deltaReasoning) {
-                    accumulatedText += deltaReasoning
-                    pendingDeltaCount += 1
-                    // Schedule flush for reasoning updates
-                    scheduleFlush()
-                  }
-                  const deltaContent = part.choices[0]?.delta?.content || ''
-                  if (deltaContent) {
-                    accumulatedText += deltaContent
-                    pendingDeltaCount += 1
-                    // Batch UI update on next animation frame
-                    scheduleFlush()
-                  }
-                }
-              } finally {
-                // Always clean up scheduled RAF when stream ends (either normally or via abort)
-                if (rafHandle !== undefined) {
-                  if (typeof cancelAnimationFrame !== 'undefined') {
-                    cancelAnimationFrame(rafHandle)
-                  } else {
-                    clearTimeout(rafHandle)
-                  }
-                  rafHandle = undefined
-                  rafScheduled = false
-                }
-
-                // Only finalize and flush if not aborted
-                if (!abortController.signal.aborted) {
-                  // Finalize reasoning (close any open think tags)
-                  accumulatedText += reasoningProcessor.finalize()
-                  // Ensure any pending buffered content is rendered at the end
-                  flushIfPending()
-                }
-              }
+              })
             }
-          } catch (error) {
-            const errorMessage =
-              error && typeof error === 'object' && 'message' in error
-                ? error.message
-                : error
-            if (
-              typeof errorMessage === 'string' &&
-              errorMessage.includes(OUT_OF_CONTEXT_SIZE) &&
-              selectedModel
-            ) {
-              const method = await showIncreaseContextSizeModal()
-              if (method === 'ctx_len') {
-                /// Increase context size
-                activeProvider = await increaseModelContextSize(
-                  selectedModel.id,
-                  activeProvider
+            const flushIfPending = () => {
+              if (!rafScheduled) return
+              if (
+                typeof cancelAnimationFrame !== 'undefined' &&
+                rafHandle !== undefined
+              ) {
+                cancelAnimationFrame(rafHandle)
+              } else if (rafHandle !== undefined) {
+                clearTimeout(rafHandle)
+              }
+              // Do an immediate flush
+              const currentContent = newAssistantThreadContent(
+                activeThread.id,
+                accumulatedText,
+                {
+                  tool_calls: toolCalls.map((e) => ({
+                    ...e,
+                    state: 'pending',
+                  })),
+                }
+              )
+              updateStreamingContent(currentContent)
+              if (tokenUsage) {
+                setTokenSpeed(
+                  currentContent,
+                  tokenUsage.completion_tokens /
+                    Math.max((Date.now() - timeToFirstToken) / 1000, 1),
+                  tokenUsage.completion_tokens
                 )
-                continue
-              } else if (method === 'context_shift' && selectedModel?.id) {
-                /// Enable context_shift
-                activeProvider = await toggleOnContextShifting(
-                  selectedModel?.id,
-                  activeProvider
-                )
-                continue
-              } else throw error
-            } else {
-              throw error
+              } else if (pendingDeltaCount > 0) {
+                updateTokenSpeed(currentContent, pendingDeltaCount)
+              }
+              pendingDeltaCount = 0
+              rafScheduled = false
+            }
+            try {
+              for await (const part of completion) {
+                // Check if aborted before processing each part
+                if (abortController.signal.aborted) {
+                  break
+                }
+
+                // Handle prompt progress if available
+                if ('prompt_progress' in part && part.prompt_progress) {
+                  // Force immediate state update to ensure we see intermediate values
+                  flushSync(() => {
+                    updatePromptProgress(part.prompt_progress)
+                  })
+                  // Add a small delay to make progress visible
+                  await new Promise((resolve) => setTimeout(resolve, 100))
+                }
+
+                // Error message
+                if (!part.choices) {
+                  throw new Error(
+                    'message' in part
+                      ? (part.message as string)
+                      : (JSON.stringify(part) ?? '')
+                  )
+                }
+
+                if ('usage' in part && part.usage) {
+                  tokenUsage = part.usage
+                }
+
+                if (part.choices[0]?.delta?.tool_calls) {
+                  extractToolCall(part, currentCall, toolCalls)
+                  // Schedule a flush to reflect tool update
+                  scheduleFlush()
+                }
+                const deltaReasoning =
+                  reasoningProcessor.processReasoningChunk(part)
+                if (deltaReasoning) {
+                  accumulatedText += deltaReasoning
+                  pendingDeltaCount += 1
+                  // Schedule flush for reasoning updates
+                  scheduleFlush()
+                }
+                const deltaContent = part.choices[0]?.delta?.content || ''
+                if (deltaContent) {
+                  accumulatedText += deltaContent
+                  pendingDeltaCount += 1
+                  // Batch UI update on next animation frame
+                  scheduleFlush()
+                }
+              }
+            } finally {
+              // Always clean up scheduled RAF when stream ends (either normally or via abort)
+              if (rafHandle !== undefined) {
+                if (typeof cancelAnimationFrame !== 'undefined') {
+                  cancelAnimationFrame(rafHandle)
+                } else {
+                  clearTimeout(rafHandle)
+                }
+                rafHandle = undefined
+                rafScheduled = false
+              }
+
+              // Only finalize and flush if not aborted
+              if (!abortController.signal.aborted) {
+                // Finalize reasoning (close any open think tags)
+                accumulatedText += reasoningProcessor.finalize()
+                // Ensure any pending buffered content is rendered at the end
+                flushIfPending()
+              }
             }
           }
-          // TODO: Remove this check when integrating new llama.cpp extension
+        } catch (error) {
+          const errorMessage =
+            error && typeof error === 'object' && 'message' in error
+              ? error.message
+              : error
           if (
-            accumulatedText.length === 0 &&
-            toolCalls.length === 0 &&
-            activeThread.model?.id &&
-            activeProvider?.provider === 'llamacpp'
+            typeof errorMessage === 'string' &&
+            errorMessage.includes(OUT_OF_CONTEXT_SIZE) &&
+            selectedModel
           ) {
-            await serviceHub
-              .models()
-              .stopModel(activeThread.model.id, 'llamacpp')
-            throw new Error('No response received from the model')
-          }
-
-          const totalThinkingTime = Date.now() - startTime // Calculate total elapsed time
-
-          // Create a final content object for adding to the thread
-          const messageMetadata: Record<string, any> = {
-            tokenSpeed: useAppState.getState().tokenSpeed,
-            assistant: currentAssistant,
-          }
-
-          if (accumulatedText.includes('<think>') || toolCalls.length > 0) {
-            messageMetadata.totalThinkingTime = totalThinkingTime
-          }
-
-          const finalContent = newAssistantThreadContent(
-            activeThread.id,
-            accumulatedText,
-            messageMetadata
-          )
-
-          builder.addAssistantMessage(accumulatedText, undefined, toolCalls)
-
-          // Check if proactive mode is enabled for this model
-          const isProactiveMode =
-            (selectedModel?.capabilities?.includes('tools') ?? false) &&
-            (selectedModel?.capabilities?.includes('vision') ?? false) &&
-            (selectedModel?.capabilities?.includes('proactive') ?? false)
-
-          const updatedMessage = await postMessageProcessing(
-            toolCalls,
-            builder,
-            finalContent,
-            abortController,
-            useToolApproval.getState().approvedTools,
-            allowAllMCPPermissions ? undefined : showApprovalModal,
-            allowAllMCPPermissions,
-            isProactiveMode
-          )
-
-          if (updatedMessage && updatedMessage.metadata) {
-            if (finalContent.metadata?.totalThinkingTime !== undefined) {
-              updatedMessage.metadata.totalThinkingTime =
-                finalContent.metadata.totalThinkingTime
-            }
-          }
-
-          addMessage(updatedMessage ?? finalContent)
-          updateStreamingContent(emptyThreadContent)
-          updatePromptProgress(undefined)
-          updateThreadTimestamp(activeThread.id)
-
-          isCompleted = !toolCalls.length
-          // Do not create agent loop if there is no need for it
-          // Check if assistant loop steps are within limits
-          if (assistantLoopSteps >= (currentAssistant?.tool_steps ?? 20)) {
-            // Stop the assistant tool call if it exceeds the maximum steps
-            availableTools = []
+            const method = await showIncreaseContextSizeModal()
+            if (method === 'ctx_len') {
+              /// Increase context size
+              activeProvider = await increaseModelContextSize(
+                selectedModel.id,
+                activeProvider
+              )
+              // NOTE: This will exit and not retry. A more robust solution might re-call sendMessage.
+              // For this change, we keep the existing behavior.
+              return
+            } else if (method === 'context_shift' && selectedModel?.id) {
+              /// Enable context_shift
+              activeProvider = await toggleOnContextShifting(
+                selectedModel?.id,
+                activeProvider
+              )
+              // NOTE: See above comment about retry.
+              return
+            } else throw error
+          } else {
+            throw error
           }
         }
+        // TODO: Remove this check when integrating new llama.cpp extension
+        if (
+          accumulatedText.length === 0 &&
+          toolCalls.length === 0 &&
+          activeThread.model?.id &&
+          activeProvider?.provider === 'llamacpp'
+        ) {
+          await serviceHub.models().stopModel(activeThread.model.id, 'llamacpp')
+          throw new Error('No response received from the model')
+        }
+
+        const totalThinkingTime = Date.now() - startTime // Calculate total elapsed time
+
+        const messageMetadata: Record<string, any> = {
+          tokenSpeed: useAppState.getState().tokenSpeed,
+          assistant: currentAssistant,
+        }
+
+        if (accumulatedText.includes('<think>') || toolCalls.length > 0) {
+          messageMetadata.totalThinkingTime = totalThinkingTime
+        }
+
+        // This is the message object that will be built upon by postMessageProcessing
+        const finalContent = newAssistantThreadContent(
+          activeThread.id,
+          accumulatedText,
+          messageMetadata
+        )
+
+        builder.addAssistantMessage(accumulatedText, undefined, toolCalls)
+        // All subsequent tool calls and follow-up completions will modify `finalContent`.
+        const updatedMessage = await postMessageProcessing(
+          toolCalls,
+          builder,
+          finalContent,
+          abortController,
+          useToolApproval.getState().approvedTools,
+          allowAllMCPPermissions ? undefined : showApprovalModal,
+          allowAllMCPPermissions,
+          activeThread,
+          activeProvider,
+          availableTools,
+          updateStreamingContent, // Pass the callback to update UI
+          currentAssistant?.tool_steps,
+          isProactiveMode
+        )
+
+        if (updatedMessage && updatedMessage.metadata) {
+          if (finalContent.metadata?.totalThinkingTime !== undefined) {
+            updatedMessage.metadata.totalThinkingTime =
+              finalContent.metadata.totalThinkingTime
+          }
+        }
+
+        // Add the single, final, composite message to the store.
+        addMessage(updatedMessage ?? finalContent)
+        updateStreamingContent(emptyThreadContent)
+        updatePromptProgress(undefined)
+        updateThreadTimestamp(activeThread.id)
       } catch (error) {
         if (!abortController.signal.aborted) {
           if (error && typeof error === 'object' && 'message' in error) {
