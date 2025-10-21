@@ -41,6 +41,12 @@ import { TEMPORARY_CHAT_QUERY_ID, TEMPORARY_CHAT_ID } from '@/constants/chat'
 import { toast } from 'sonner'
 import { Attachment } from '@/types/attachment'
 
+type StreamEvent = {
+  timestamp: number
+  type: 'reasoning_chunk' | 'tool_call' | 'tool_output'
+  data: any
+}
+
 export const useChat = () => {
   const [
     updateTokenSpeed,
@@ -278,6 +284,8 @@ export const useChat = () => {
       const activeThread = await getCurrentThread(projectId)
       const selectedProvider = useModelProvider.getState().selectedProvider
       let activeProvider = getProviderByName(selectedProvider)
+
+      const streamEvents: StreamEvent[] = []
 
       resetTokenSpeed()
       if (!activeThread || !activeProvider) return
@@ -555,6 +563,7 @@ export const useChat = () => {
                       ...e,
                       state: 'pending',
                     })),
+                    streamEvents: streamEvents,
                   }
                 )
                 updateStreamingContent(currentContent)
@@ -591,6 +600,7 @@ export const useChat = () => {
                     ...e,
                     state: 'pending',
                   })),
+                  streamEvents: streamEvents,
                 }
               )
               updateStreamingContent(currentContent)
@@ -636,16 +646,37 @@ export const useChat = () => {
                 if ('usage' in part && part.usage) {
                   tokenUsage = part.usage
                 }
+                const deltaToolCalls = part.choices[0]?.delta?.tool_calls
+                if (deltaToolCalls) {
+                  const index = deltaToolCalls[0]?.index
+                  // Check if this chunk starts a brand new tool call
+                  const isNewToolCallStart =
+                    index !== undefined && toolCalls[index] === undefined
 
-                if (part.choices[0]?.delta?.tool_calls) {
                   extractToolCall(part, currentCall, toolCalls)
-                  // Schedule a flush to reflect tool update
-                  scheduleFlush()
+
+                  if (isNewToolCallStart) {
+                    // Track tool call event only when it begins
+                    // toolCalls[index] is the newly created object due to extractToolCall
+                    streamEvents.push({
+                      timestamp: Date.now(),
+                      type: 'tool_call',
+                      data: { toolCall: toolCalls[index] },
+                    })
+                    // Schedule a flush to reflect tool update
+                    scheduleFlush()
+                  }
                 }
                 const deltaReasoning =
                   reasoningProcessor.processReasoningChunk(part)
                 if (deltaReasoning) {
                   accumulatedText += deltaReasoning
+                  // Track reasoning event
+                  streamEvents.push({
+                    timestamp: Date.now(),
+                    type: 'reasoning_chunk',
+                    data: { content: deltaReasoning },
+                  })
                   pendingDeltaCount += 1
                   // Schedule flush for reasoning updates
                   scheduleFlush()
@@ -728,6 +759,7 @@ export const useChat = () => {
         const messageMetadata: Record<string, any> = {
           tokenSpeed: useAppState.getState().tokenSpeed,
           assistant: currentAssistant,
+          streamEvents, // Add chronological events
         }
 
         if (accumulatedText.includes('<think>') || toolCalls.length > 0) {

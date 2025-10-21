@@ -28,7 +28,6 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useModelProvider } from '@/hooks/useModelProvider'
 import { extractFilesFromPrompt } from '@/lib/fileMetadata'
 import { createImageAttachment } from '@/types/attachment'
-import { extractThinkingContent } from '@/lib/utils'
 
 // Define ToolCall interface for type safety when accessing metadata
 interface ToolCall {
@@ -43,12 +42,19 @@ interface ToolCall {
   state?: 'pending' | 'completed'
 }
 
-// Define ThoughtStep type
-type ThoughtStep = {
-  type: 'thought' | 'tool_call' | 'tool_output' | 'done'
+// Define ReActStep type (Reasoning-Action Step)
+type ReActStep = {
+  type: 'reasoning' | 'tool_call' | 'tool_output' | 'done'
   content: string
   metadata?: any
   time?: number
+}
+
+const cleanReasoning = (content: string) => {
+  return content
+    .replace(/^<think>/, '') // Remove opening tag at start
+    .replace(/<\/think>$/, '') // Remove closing tag at end
+    .trim()
 }
 
 const CopyButton = ({ text }: { text: string }) => {
@@ -135,37 +141,38 @@ export const ThreadContent = memo(
     }, [text, item.role])
 
     const { reasoningSegment, textSegment } = useMemo(() => {
-      // Check for thinking formats
-      const hasThinkTag = text.includes('<think>') && !text.includes('</think>')
-      const hasAnalysisChannel =
-        text.includes('<|channel|>analysis<|message|>') &&
-        !text.includes('<|start|>assistant<|channel|>final<|message|>')
-
-      if (hasThinkTag || hasAnalysisChannel)
-        return { reasoningSegment: text, textSegment: '' }
+      let reasoningSegment = undefined
+      let textSegment = text
 
       // Check for completed think tag format
-      const thinkMatch = text.match(/<think>([\s\S]*?)<\/think>/)
-      if (thinkMatch?.index !== undefined) {
-        const splitIndex = thinkMatch.index + thinkMatch[0].length
-        return {
-          reasoningSegment: text.slice(0, splitIndex),
-          textSegment: text.slice(splitIndex),
-        }
+      console.log(textSegment)
+      const thinkStartTag = '<think>'
+      const thinkEndTag = '</think>'
+
+      const firstThinkIndex = text.indexOf(thinkStartTag)
+      const lastThinkEndIndex = text.lastIndexOf(thinkEndTag)
+
+      if (firstThinkIndex !== -1 && lastThinkEndIndex > firstThinkIndex) {
+        // If multiple <think>...</think> blocks exist sequentially, we capture the entire span
+        // from the start of the first tag to the end of the last tag.
+        const splitIndex = lastThinkEndIndex + thinkEndTag.length
+
+        reasoningSegment = text.slice(firstThinkIndex, splitIndex)
+        textSegment = text.slice(splitIndex).trim()
+
+        return { reasoningSegment, textSegment }
+      }
+      // If streaming, and we see the opening tag, the entire message is reasoningSegment
+      const hasThinkTagStart =
+        text.includes(thinkStartTag) && !text.includes(thinkEndTag)
+
+      if (hasThinkTagStart) {
+        reasoningSegment = text
+        textSegment = ''
+        return { reasoningSegment, textSegment }
       }
 
-      // Check for completed analysis channel format
-      const analysisMatch = text.match(
-        /<\|channel\|>analysis<\|message\|>([\s\S]*?)<\|start\|>assistant<\|channel\|>final<\|message\|>/
-      )
-      if (analysisMatch?.index !== undefined) {
-        const splitIndex = analysisMatch.index + analysisMatch[0].length
-        return {
-          reasoningSegment: text.slice(0, splitIndex),
-          textSegment: text.slice(splitIndex),
-        }
-      }
-
+      // Default: No reasoning found, or it's a message composed entirely of final text.
       return { reasoningSegment: undefined, textSegment: text }
     }, [text])
 
@@ -252,79 +259,194 @@ export const ThreadContent = memo(
       | { avatar?: React.ReactNode; name?: React.ReactNode }
       | undefined
 
-    // Constructing allSteps for ThinkingBlock (Fixing Interleaving and Done step)
-    const allSteps: ThoughtStep[] = useMemo(() => {
-      const steps: ThoughtStep[] = []
+    type StreamEvent = {
+      timestamp: number
+      type: 'reasoning_chunk' | 'tool_call' | 'tool_output'
+      data: any
+    }
 
-      // Extract thought paragraphs from reasoningSegment. We assume these are ordered
-      // relative to tool calls.
-      const thoughtText = extractThinkingContent(reasoningSegment || '')
-      const thoughtParagraphs = thoughtText
-        ? thoughtText
+    // Constructing allSteps for ThinkingBlock - CHRONOLOGICAL approach
+    const allSteps: ReActStep[] = useMemo(() => {
+      const steps: ReActStep[] = []
+
+      // Get streamEvents from metadata (if available)
+      const streamEvents = (item.metadata?.streamEvents as StreamEvent[]) || []
+      const toolCalls = (item.metadata?.tool_calls || []) as ToolCall[]
+
+      if (streamEvents.length > 0) {
+        // CHRONOLOGICAL PATH: Use streamEvents for true temporal order
+        let reasoningBuffer = ''
+
+        streamEvents.forEach((event) => {
+          switch (event.type) {
+            case 'reasoning_chunk':
+              // Accumulate reasoning chunks
+              reasoningBuffer += event.data.content
+              break
+
+            case 'tool_call':
+            case 'tool_output':
+              // Flush accumulated reasoning before tool event
+              if (reasoningBuffer.trim()) {
+                const cleanedBuffer = cleanReasoning(reasoningBuffer) // <--- Strip tags here
+
+                // Split accumulated reasoning by paragraphs for display
+                const paragraphs = cleanedBuffer
+                  .split(/\n\s*\n/)
+                  .filter((p) => p.trim().length > 0)
+
+                paragraphs.forEach((para) => {
+                  steps.push({
+                    type: 'reasoning',
+                    content: para.trim(),
+                  })
+                })
+
+                reasoningBuffer = ''
+              }
+
+              if (event.type === 'tool_call') {
+                // Add tool call
+                const toolCall = event.data.toolCall
+                steps.push({
+                  type: 'tool_call',
+                  content: toolCall?.function?.name || 'Tool Call',
+                  metadata:
+                    typeof toolCall?.function?.arguments === 'string'
+                      ? toolCall.function.arguments
+                      : JSON.stringify(
+                          toolCall?.function?.arguments || {},
+                          null,
+                          2
+                        ),
+                })
+              } else if (event.type === 'tool_output') {
+                // Add tool output
+                const result = event.data.result
+                let outputContent = JSON.stringify(result, null, 2) // Default fallback
+
+                const firstContentPart = result?.content?.[0]
+
+                if (firstContentPart?.type === 'text') {
+                  const textContent = firstContentPart.text
+                  // Robustly check for { value: string } structure or direct string
+                  if (
+                    typeof textContent === 'object' &&
+                    textContent !== null &&
+                    'value' in textContent
+                  ) {
+                    outputContent = textContent.value as string
+                  } else if (typeof textContent === 'string') {
+                    outputContent = textContent
+                  }
+                } else if (typeof result === 'string') {
+                  outputContent = result
+                }
+
+                steps.push({
+                  type: 'tool_output',
+                  content: outputContent,
+                })
+              }
+              break
+          }
+        })
+
+        // Flush any remaining reasoning at the end
+        if (reasoningBuffer.trim()) {
+          const cleanedBuffer = cleanReasoning(reasoningBuffer) // <--- Strip tags here
+          const paragraphs = cleanedBuffer
             .split(/\n\s*\n/)
-            .filter((s) => s.trim().length > 0)
-            .map((content) => content.trim())
-        : []
+            .filter((p) => p.trim().length > 0)
 
-      let thoughtIndex = 0
-
-      // Interleave tool steps and thought steps
-      if (isToolCalls && item.metadata?.tool_calls) {
-        const toolCalls = item.metadata.tool_calls as ToolCall[]
-
-        for (const call of toolCalls) {
-          // Check for thought chunk preceding this tool call
-          if (thoughtIndex < thoughtParagraphs.length) {
+          paragraphs.forEach((para) => {
             steps.push({
-              type: 'thought',
-              content: thoughtParagraphs[thoughtIndex],
+              type: 'reasoning',
+              content: para.trim(),
             })
-            thoughtIndex++
+          })
+        }
+      } else {
+        console.debug('Fallback mode!!!!')
+        // FALLBACK PATH: No streamEvents - use old paragraph-splitting logic
+        const rawReasoningContent = cleanReasoning(reasoningSegment || '')
+        const reasoningParagraphs = rawReasoningContent
+          ? rawReasoningContent
+              .split(/\n\s*\n/)
+              .filter((s) => s.trim().length > 0)
+              .map((content) => content.trim())
+          : []
+
+        let reasoningIndex = 0
+
+        toolCalls.forEach((call) => {
+          // Add reasoning before this tool call
+          if (reasoningIndex < reasoningParagraphs.length) {
+            steps.push({
+              type: 'reasoning',
+              content: reasoningParagraphs[reasoningIndex],
+            })
+            reasoningIndex++
           }
 
-          // Tool Call Step
+          // Add tool call
           steps.push({
             type: 'tool_call',
             content: call.tool?.function?.name || 'Tool Call',
-            metadata: call.tool?.function?.arguments as string,
+            metadata:
+              typeof call.tool?.function?.arguments === 'string'
+                ? call.tool.function.arguments
+                : JSON.stringify(call.tool?.function?.arguments || {}, null, 2),
           })
 
-          // Tool Output Step
+          // Add tool output
           if (call.response) {
-            const outputContent =
-              typeof call.response === 'string'
-                ? call.response
-                : JSON.stringify(call.response, null, 2)
+            const result = call.response
+            let outputContent = JSON.stringify(result, null, 2)
+
+            const firstContentPart = result?.content?.[0]
+
+            if (firstContentPart?.type === 'text') {
+              const textContent = firstContentPart.text
+              if (
+                typeof textContent === 'object' &&
+                textContent !== null &&
+                'value' in textContent
+              ) {
+                outputContent = textContent.value as string
+              } else if (typeof textContent === 'string') {
+                outputContent = textContent
+              }
+            } else if (typeof result === 'string') {
+              outputContent = result
+            }
 
             steps.push({
               type: 'tool_output',
               content: outputContent,
             })
           }
+        })
+
+        // Add remaining reasoning
+        while (reasoningIndex < reasoningParagraphs.length) {
+          steps.push({
+            type: 'reasoning',
+            content: reasoningParagraphs[reasoningIndex],
+          })
+          reasoningIndex++
         }
       }
 
-      // Add remaining thoughts (e.g., final answer formulation thought)
-      while (thoughtIndex < thoughtParagraphs.length) {
-        steps.push({
-          type: 'thought',
-          content: thoughtParagraphs[thoughtIndex],
-        })
-        thoughtIndex++
-      }
-
-      // Add Done step only if the sequence is concluded for display
+      // Add Done step
       const totalTime = item.metadata?.totalThinkingTime as number | undefined
       const lastStepType = steps[steps.length - 1]?.type
 
-      // If the message is finalized (not streaming) AND the last step was a tool output
-      // AND there is no subsequent final text, we suppress 'done' to allow seamless transition
-      // to the next assistant message/thought block.
-      const endsInToolOutputWithoutFinalText =
-        lastStepType === 'tool_output' && textSegment.length === 0
-
       if (!isStreamingThisThread && (hasReasoning || isToolCalls)) {
-        if (textSegment.length > 0 || !endsInToolOutputWithoutFinalText) {
+        const endsInToolOutputWithoutFinalText =
+          lastStepType === 'tool_output' && textSegment.length === 0
+
+        if (!endsInToolOutputWithoutFinalText) {
           steps.push({
             type: 'done',
             content: 'Done',
@@ -335,11 +457,11 @@ export const ThreadContent = memo(
 
       return steps
     }, [
+      item,
       reasoningSegment,
-      isToolCalls,
-      item.metadata,
       isStreamingThisThread,
       hasReasoning,
+      isToolCalls,
       textSegment,
     ])
     // END: Constructing allSteps
@@ -504,10 +626,7 @@ export const ThreadContent = memo(
               />
             )}
 
-            <RenderMarkdown
-              content={textSegment.replace('</think>', '')}
-              components={linkComponents}
-            />
+            <RenderMarkdown content={textSegment} components={linkComponents} />
 
             {!isToolCalls && (
               <div className="flex items-center gap-2 text-main-view-fg/60 text-xs">

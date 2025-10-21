@@ -7,9 +7,9 @@ import { useTranslation } from '@/i18n/react-i18next-compat'
 import { useMemo } from 'react'
 import { cn } from '@/lib/utils'
 
-// Define ThoughtStep type
-type ThoughtStep = {
-  type: 'thought' | 'tool_call' | 'tool_output' | 'done'
+// Define ReActStep type (Reasoning-Action Step)
+type ReActStep = {
+  type: 'reasoning' | 'tool_call' | 'tool_output' | 'done' // Changed 'thought' to 'reasoning'
   content: string
   metadata?: any
   time?: number
@@ -18,7 +18,7 @@ type ThoughtStep = {
 interface Props {
   text: string
   id: string
-  steps?: ThoughtStep[]
+  steps?: ReActStep[] // Updated type
   loading?: boolean
   duration?: number
 }
@@ -73,14 +73,10 @@ const ThinkingBlock = ({
   const N = stepsWithoutDone.length
 
   // Determine the step to display in the condensed streaming view
-  // When step N-1 is streaming, show the previously finished step (N-2).
-  const stepToRenderWhenStreaming = useMemo(() => {
-    if (!loading) return null
-    // If N >= 2, the N-1 step is currently streaming, so we show the finished step N-2.
-    if (N >= 2) {
-      return stepsWithoutDone[N - 2]
-    }
-    return null
+  // When loading, we show the last available step (N-1), which is currently accumulating content.
+  const activeStep = useMemo(() => {
+    if (!loading || N === 0) return null
+    return stepsWithoutDone[N - 1]
   }, [loading, N, stepsWithoutDone])
 
   // Determine if the block is truly empty (streaming started but no content/steps yet)
@@ -112,7 +108,8 @@ const ThinkingBlock = ({
   }
 
   // --- Rendering Functions for Expanded View ---
-  const renderStepContent = (step: ThoughtStep, index: number) => {
+  const renderStepContent = (step: ReActStep, index: number) => {
+    // Updated type
     if (step.type === 'done') {
       const timeInSeconds = formatDuration(step.time ?? 0)
       const timeDisplay =
@@ -165,7 +162,7 @@ const ThinkingBlock = ({
         </>
       )
     } else {
-      // thought
+      // reasoning
       contentDisplay = (
         <RenderMarkdown isWrapping={true} content={step.content} />
       )
@@ -216,21 +213,27 @@ const ThinkingBlock = ({
           </button>
         </div>
 
-        {/* Streaming/Condensed View - shows previous finished step */}
-        {loading && stepToRenderWhenStreaming && (
+        {/* Streaming/Condensed View - shows active step (N-1) */}
+        {loading && activeStep && (
           <div
-            key={`streaming-${N - 2}`}
+            key={`streaming-${N - 1}`}
             className={cn(
               'mt-4 pl-2 pr-4 text-main-view-fg/60',
-              'animate-in fade-in slide-in-from-top-2 duration-300'
+              // Only animate fade-in if it's not the very first step (N > 1)
+              N > 1 && 'animate-in fade-in slide-in-from-top-2 duration-300'
             )}
           >
             <div className="relative border-main-view-fg/20">
               <div className="relative pl-5">
-                {/* Bullet point */}
-                <div className="absolute left-[-2px] top-1.5 size-2 rounded-full bg-main-view-fg/60 animate-pulse" />
-                {/* Previous completed step content */}
-                {renderStepContent(stepToRenderWhenStreaming, N - 2)}
+                {/* Bullet point/Icon position relative to line */}
+                <div
+                  className={cn(
+                    'absolute left-[-2px] top-1.5 size-2 rounded-full bg-main-view-fg/60',
+                    activeStep.type !== 'done' && 'animate-pulse' // Pulse if active/streaming
+                  )}
+                />
+                {/* Active step content */}
+                {renderStepContent(activeStep, N - 1)}
               </div>
             </div>
           </div>

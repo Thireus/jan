@@ -687,6 +687,16 @@ export const postMessageProcessing = async (
       toolCallEntry.response = result
       toolCallEntry.state = 'ready'
       if (updateStreamingUI) updateStreamingUI({ ...message }) // Show result
+      const streamEvents = (message.metadata?.streamEvents || []) as any[]
+      streamEvents.push({
+        timestamp: Date.now(),
+        type: 'tool_output',
+        data: { result: result },
+      })
+      message.metadata = {
+        ...(message.metadata ?? {}),
+        streamEvents: streamEvents,
+      }
       builder.addToolMessage(result as ToolResult, toolCall.id)
 
       // Proactive mode: Capture screenshot/snapshot after browser tool execution
@@ -734,6 +744,7 @@ export const postMessageProcessing = async (
         if (followUpCompletion) {
           let followUpText = ''
           const newToolCalls: ChatCompletionMessageToolCall[] = []
+          const streamEvents = (message.metadata?.streamEvents || []) as any[]
           const textContent = message.content.find(
             (c) => c.type === ContentType.Text
           )
@@ -758,19 +769,56 @@ export const postMessageProcessing = async (
 
               if (textContent?.text) {
                 if (deltaReasoning) textContent.text.value += deltaReasoning
-                if (deltaContent) textContent.text.value += deltaContent
+                if (deltaContent) {
+                  textContent.text.value += deltaContent
+                  followUpText += deltaContent
+                  console.log(`delta content from followup:\n${deltaContent}`)
+                }
               }
-              if (deltaContent) followUpText += deltaContent
+              if (deltaReasoning) {
+                streamEvents.push({
+                  timestamp: Date.now(),
+                  type: 'reasoning_chunk',
+                  data: { content: deltaReasoning },
+                })
+              }
+              const initialToolCallCount = newToolCalls.length
 
               if (chunk.choices[0]?.delta?.tool_calls) {
                 extractToolCall(chunk, null, newToolCalls)
+                if (newToolCalls.length > initialToolCallCount) {
+                  // The new tool call is the last element added
+                  streamEvents.push({
+                    timestamp: Date.now(),
+                    type: 'tool_call',
+                    data: { toolCall: newToolCalls[newToolCalls.length - 1] },
+                  })
+                }
+              }
+              // Ensure the metadata is updated before calling updateStreamingUI
+              message.metadata = {
+                ...(message.metadata ?? {}),
+                streamEvents: streamEvents,
               }
 
-              if (updateStreamingUI) updateStreamingUI({ ...message })
+              if (updateStreamingUI) {
+                // FIX: Create a new object reference for the content array
+                // This forces the memoized component to detect the change in the mutated text
+                const uiMessage: ThreadMessage = {
+                  ...message,
+                  content: message.content.map((c) => ({ ...c })), // Shallow copy array and its parts
+                }
+                updateStreamingUI(uiMessage)
+              }
             }
-            if (textContent?.text) {
-              textContent.text.value += reasoningProcessor.finalize()
-              if (updateStreamingUI) updateStreamingUI({ ...message })
+            if (textContent?.text && updateStreamingUI) {
+              // FIX: Create a new object reference for the content array
+              // This forces the memoized component to detect the change in the mutated text
+              const uiMessage: ThreadMessage = {
+                ...message,
+                content: message.content.map((c) => ({ ...c })), // Shallow copy array and its parts
+              }
+              updateStreamingUI(uiMessage)
             }
           }
 
