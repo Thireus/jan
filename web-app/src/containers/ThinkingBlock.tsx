@@ -1,3 +1,5 @@
+/* eslint-disable react-hooks/rules-of-hooks */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { ChevronDown, ChevronUp, Loader, Check } from 'lucide-react'
 import { create } from 'zustand'
 import { RenderMarkdown } from './RenderMarkdown'
@@ -119,7 +121,10 @@ const ThinkingBlock = ({
           : ''
 
       return (
-        <div key={index} className="flex items-center gap-2 mt-2 text-accent">
+        <div
+          key={index}
+          className="flex items-center gap-1 text-accent transition-all"
+        >
           <Check className="size-4" />
           <span className="font-medium">{t('done')}</span>
           {timeDisplay && (
@@ -167,7 +172,7 @@ const ThinkingBlock = ({
     }
 
     return (
-      <div key={index} className="py-1 text-main-view-fg/80">
+      <div key={index} className="text-main-view-fg/80">
         {contentDisplay}
       </div>
     )
@@ -188,7 +193,7 @@ const ThinkingBlock = ({
       className="mx-auto w-full cursor-pointer break-words"
       onClick={handleClick}
     >
-      <div className="mb-4 rounded-lg bg-main-view-fg/4 border border-dashed border-main-view-fg/10 p-2">
+      <div className="mb-4 rounded-lg bg-main-view-fg/4 p-2 transition-all duration-200">
         <div className="flex items-center gap-3">
           {loading && (
             <Loader className="size-4 animate-spin text-main-view-fg/60" />
@@ -201,21 +206,29 @@ const ThinkingBlock = ({
             {!loading &&
               steps.length > 0 &&
               (isExpanded ? (
-                <ChevronUp className="size-4 text-main-view-fg/60" />
+                <ChevronUp className="size-4 text-main-view-fg/60 transition-transform duration-200" />
               ) : (
-                <ChevronDown className="size-4 text-main-view-fg/60" />
+                <ChevronDown className="size-4 text-main-view-fg/60 transition-transform duration-200" />
               ))}
-            <span className="font-medium">{headerTitle}</span>
+            <span className="font-medium transition-all duration-200">
+              {headerTitle}
+            </span>
           </button>
         </div>
 
         {/* Streaming/Condensed View - shows previous finished step */}
         {loading && stepToRenderWhenStreaming && (
-          <div className={cn('mt-2 pl-6 pr-4 text-main-view-fg/60')}>
-            <div className="relative border-l border-dashed border-main-view-fg/20 ml-1.5">
-              <div className="relative pl-6 pb-2">
+          <div
+            key={`streaming-${N - 2}`}
+            className={cn(
+              'mt-4 pl-2 pr-4 text-main-view-fg/60',
+              'animate-in fade-in slide-in-from-top-2 duration-300'
+            )}
+          >
+            <div className="relative border-main-view-fg/20">
+              <div className="relative pl-5">
                 {/* Bullet point */}
-                <div className="absolute left-[-5px] top-[10px] size-2 rounded-full bg-main-view-fg/60" />
+                <div className="absolute left-[-2px] top-1.5 size-2 rounded-full bg-main-view-fg/60 animate-pulse" />
                 {/* Previous completed step content */}
                 {renderStepContent(stepToRenderWhenStreaming, N - 2)}
               </div>
@@ -225,14 +238,23 @@ const ThinkingBlock = ({
 
         {/* Expanded View - shows all steps */}
         {isExpanded && !loading && (
-          <div className="mt-2 pl-6 pr-4 text-main-view-fg/60">
-            <div className="relative border-l border-dashed border-main-view-fg/20 ml-1.5">
+          <div className="mt-4 pl-2 pr-4 text-main-view-fg/60 animate-in fade-in slide-in-from-top-2 duration-300">
+            <div className="relative border-main-view-fg/20">
               {steps.map((step, index) => (
-                <div key={index} className="relative pl-6 pb-2">
+                <div
+                  key={index}
+                  className={cn(
+                    'relative pl-5 pb-2',
+                    'fade-in slide-in-from-left-1 duration-200',
+                    step.type !== 'done' &&
+                      'after:content-[] after:border-l after:border-dashed after:border-main-view-fg/20 after:absolute after:left-0.5 after:bottom-0 after:w-1 after:h-[calc(100%-8px)]'
+                  )}
+                  style={{ animationDelay: `${index * 50}ms` }}
+                >
                   {/* Bullet point/Icon position relative to line */}
                   <div
                     className={cn(
-                      'absolute left-[-5px] top-[10px] size-2 rounded-full',
+                      'absolute left-[-2px] top-1.5 size-2 rounded-full transition-colors duration-200',
                       step.type === 'done' ? 'bg-accent' : 'bg-main-view-fg/60'
                     )}
                   />
