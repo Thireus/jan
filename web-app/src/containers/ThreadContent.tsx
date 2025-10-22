@@ -140,44 +140,98 @@ export const ThreadContent = memo(
       return { files: [], cleanPrompt: text }
     }, [text, item.role])
 
-    const { reasoningSegment, textSegment } = useMemo(() => {
-      let reasoningSegment = undefined
-      let textSegment = text
-
-      // Check for completed think tag format
-      console.log(textSegment)
+    const {
+      finalOutputText,
+      streamedReasoningText,
+      isReasoningActiveLoading,
+      hasReasoningSteps,
+    } = useMemo(() => {
       const thinkStartTag = '<think>'
       const thinkEndTag = '</think>'
+      let currentFinalText = ''
+      let currentReasoning = ''
+      let hasSteps = false
 
-      const firstThinkIndex = text.indexOf(thinkStartTag)
-      const lastThinkEndIndex = text.lastIndexOf(thinkEndTag)
+      const firstThinkStart = text.indexOf(thinkStartTag)
+      const lastThinkStart = text.lastIndexOf(thinkStartTag)
+      const lastThinkEnd = text.lastIndexOf(thinkEndTag)
 
-      if (firstThinkIndex !== -1 && lastThinkEndIndex > firstThinkIndex) {
-        // If multiple <think>...</think> blocks exist sequentially, we capture the entire span
-        // from the start of the first tag to the end of the last tag.
-        const splitIndex = lastThinkEndIndex + thinkEndTag.length
+      // Check if there's an unclosed <think> tag
+      const hasOpenThink = lastThinkStart > lastThinkEnd
 
-        reasoningSegment = text.slice(firstThinkIndex, splitIndex)
-        textSegment = text.slice(splitIndex).trim()
+      if (firstThinkStart === -1) {
+        // No <think> tags at all - everything is final output
+        currentFinalText = text
+      } else if (hasOpenThink && isStreamingThisThread) {
+        // CASE 1: There's an open <think> tag during streaming
+        // Everything from FIRST <think> onward is reasoning
+        hasSteps = true
 
-        return { reasoningSegment, textSegment }
+        // Text before first <think> is final output
+        currentFinalText = text.substring(0, firstThinkStart)
+
+        // Everything from first <think> onward is reasoning
+        const reasoningText = text.substring(firstThinkStart)
+
+        // Extract content from all <think> blocks (both closed and open)
+        const reasoningRegex = /<think>([\s\S]*?)(?:<\/think>|$)/g
+        const matches = [...reasoningText.matchAll(reasoningRegex)]
+        const reasoningParts = matches.map((match) => cleanReasoning(match[1]))
+        currentReasoning = reasoningParts.join('\n\n')
+      } else {
+        // CASE 2: All <think> tags are closed
+        // Extract reasoning from inside tags, everything else is final output
+        hasSteps = true
+
+        const reasoningRegex = /<think>[\s\S]*?<\/think>/g
+        const matches = [...text.matchAll(reasoningRegex)]
+
+        let lastIndex = 0
+
+        // Build final output from text between/outside <think> blocks
+        for (const match of matches) {
+          currentFinalText += text.substring(lastIndex, match.index)
+          lastIndex = match.index + match[0].length
+        }
+
+        // Add remaining text after last </think>
+        currentFinalText += text.substring(lastIndex)
+
+        // Extract reasoning content
+        const reasoningParts = matches.map((match) => {
+          const content = match[0].replace(/<think>|<\/think>/g, '')
+          return cleanReasoning(content)
+        })
+        currentReasoning = reasoningParts.join('\n\n')
       }
-      // If streaming, and we see the opening tag, the entire message is reasoningSegment
-      const hasThinkTagStart =
-        text.includes(thinkStartTag) && !text.includes(thinkEndTag)
 
-      if (hasThinkTagStart) {
-        reasoningSegment = text
-        textSegment = ''
-        return { reasoningSegment, textSegment }
+      // Check for tool calls
+      const isToolCallsPresent = !!(
+        item.metadata &&
+        'tool_calls' in item.metadata &&
+        Array.isArray(item.metadata.tool_calls) &&
+        item.metadata.tool_calls.length > 0
+      )
+
+      hasSteps = hasSteps || isToolCallsPresent
+
+      // Loading if streaming and no final output yet
+      const loading =
+        isStreamingThisThread && currentFinalText.trim().length === 0
+
+      return {
+        finalOutputText: currentFinalText.trim(),
+        streamedReasoningText: currentReasoning,
+        isReasoningActiveLoading: loading,
+        hasReasoningSteps: hasSteps,
       }
+    }, [item.content, isStreamingThisThread, item.metadata, text])
 
-      // Default: No reasoning found, or it's a message composed entirely of final text.
-      return { reasoningSegment: undefined, textSegment: text }
-    }, [text])
-
-    // Check if reasoning segment is actually present (i.e., non-empty string)
-    const hasReasoning = !!reasoningSegment
+    const isToolCalls =
+      item.metadata &&
+      'tool_calls' in item.metadata &&
+      Array.isArray(item.metadata.tool_calls) &&
+      item.metadata.tool_calls.length
 
     const getMessages = useMessages((state) => state.getMessages)
     const deleteMessage = useMessages((state) => state.deleteMessage)
@@ -249,12 +303,6 @@ export const ThreadContent = memo(
       }
     }, [deleteMessage, getMessages, item])
 
-    const isToolCalls =
-      item.metadata &&
-      'tool_calls' in item.metadata &&
-      Array.isArray(item.metadata.tool_calls) &&
-      item.metadata.tool_calls.length
-
     const assistant = item.metadata?.assistant as
       | { avatar?: React.ReactNode; name?: React.ReactNode }
       | undefined
@@ -272,6 +320,8 @@ export const ThreadContent = memo(
       // Get streamEvents from metadata (if available)
       const streamEvents = (item.metadata?.streamEvents as StreamEvent[]) || []
       const toolCalls = (item.metadata?.tool_calls || []) as ToolCall[]
+
+      const isMessageFinalized = !isStreamingThisThread
 
       if (streamEvents.length > 0) {
         // CHRONOLOGICAL PATH: Use streamEvents for true temporal order
@@ -366,10 +416,10 @@ export const ThreadContent = memo(
             })
           })
         }
-      } else {
-        console.debug('Fallback mode!!!!')
-        // FALLBACK PATH: No streamEvents - use old paragraph-splitting logic
-        const rawReasoningContent = cleanReasoning(reasoningSegment || '')
+      } else if (isMessageFinalized) {
+        // FALLBACK PATH: No streamEvents - use split text for content construction
+
+        const rawReasoningContent = streamedReasoningText || ''
         const reasoningParagraphs = rawReasoningContent
           ? rawReasoningContent
               .split(/\n\s*\n/)
@@ -442,9 +492,9 @@ export const ThreadContent = memo(
       const totalTime = item.metadata?.totalThinkingTime as number | undefined
       const lastStepType = steps[steps.length - 1]?.type
 
-      if (!isStreamingThisThread && (hasReasoning || isToolCalls)) {
+      if (!isStreamingThisThread && hasReasoningSteps) {
         const endsInToolOutputWithoutFinalText =
-          lastStepType === 'tool_output' && textSegment.length === 0
+          lastStepType === 'tool_output' && finalOutputText.length === 0
 
         if (!endsInToolOutputWithoutFinalText) {
           steps.push({
@@ -458,22 +508,34 @@ export const ThreadContent = memo(
       return steps
     }, [
       item,
-      reasoningSegment,
       isStreamingThisThread,
-      hasReasoning,
-      isToolCalls,
-      textSegment,
+      hasReasoningSteps,
+      finalOutputText,
+      streamedReasoningText,
     ])
     // END: Constructing allSteps
 
-    // Determine if reasoning phase is actively loading
-    // Loading is true only if streaming is happening AND we haven't started outputting final text yet.
-    const isReasoningActiveLoading =
-      isStreamingThisThread && textSegment.length === 0
+    // ====================================================================
+    // FIX: Determine which text prop to pass to ThinkingBlock
+    // If we have streamEvents, rely on 'steps' and pass an empty text buffer.
+    const streamingTextBuffer = useMemo(() => {
+      const streamEvents = item.metadata?.streamEvents
 
-    // Determine if we should show the thinking block (has reasoning OR tool calls OR currently loading reasoning)
+      // Check if streamEvents exists AND is an array AND has a length greater than 0
+      if (Array.isArray(streamEvents) && streamEvents.length > 0) {
+        // We are using the chronological path (allSteps) for rendering
+        // Return empty string to disable the ThinkingBlock's raw text buffer
+        return ''
+      }
+
+      // Otherwise, rely on the raw text buffer for rendering (used during initial stream fallback)
+      return streamedReasoningText
+    }, [item.metadata?.streamEvents, streamedReasoningText]) // Use the object reference for dependency array
+    // ====================================================================
+
+    // Determine if we should show the thinking block
     const shouldShowThinkingBlock =
-      hasReasoning || isToolCalls || isReasoningActiveLoading
+      hasReasoningSteps || isToolCalls || isReasoningActiveLoading
 
     return (
       <Fragment>
@@ -614,19 +676,25 @@ export const ThreadContent = memo(
               <ThinkingBlock
                 id={
                   item.isLastMessage
-                    ? `${item.thread_id}-last-${(reasoningSegment || text).slice(0, 50).replace(/\s/g, '').slice(-10)}`
+                    ? `${item.thread_id}-last-${(streamingTextBuffer || text).slice(0, 50).replace(/\s/g, '').slice(-10)}`
                     : `${item.thread_id}-${item.index ?? item.id}`
                 }
-                text={reasoningSegment || ''}
+                // Pass the safe buffer
+                text={streamingTextBuffer}
                 steps={allSteps}
-                loading={isReasoningActiveLoading} // Req 2: False if textSegment is starting
+                loading={isReasoningActiveLoading}
                 duration={
                   item.metadata?.totalThinkingTime as number | undefined
                 }
               />
             )}
 
-            <RenderMarkdown content={textSegment} components={linkComponents} />
+            {!isReasoningActiveLoading && finalOutputText.length > 0 && (
+              <RenderMarkdown
+                content={finalOutputText}
+                components={linkComponents}
+              />
+            )}
 
             {!isToolCalls && (
               <div className="flex items-center gap-2 text-main-view-fg/60 text-xs">

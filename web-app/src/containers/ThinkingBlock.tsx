@@ -156,7 +156,7 @@ const ThinkingBlock = ({
           <div className="mt-1">
             <RenderMarkdown
               isWrapping={true}
-              content={'```json\n' + step.content + '\n```'}
+              content={step.content.substring(0, 1000)}
             />
           </div>
         </>

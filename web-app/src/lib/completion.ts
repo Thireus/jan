@@ -407,9 +407,6 @@ export const extractToolCall = (
   return calls
 }
 
-// Keep track of total tool steps to prevent infinite loops
-let toolStepCounter = 0
-
 /**
  * Helper function to check if a tool call is a browser MCP tool
  * @param toolName - The name of the tool
@@ -533,6 +530,12 @@ const filterOldProactiveScreenshots = (builder: CompletionMessagesBuilder) => {
  * @param approvedTools
  * @param showModal
  * @param allowAllMCPPermissions
+ * @param thread
+ * @param provider
+ * @param tools
+ * @param updateStreamingUI
+ * @param maxToolSteps
+ * @param currentStepCount - Internal counter for recursive calls (do not set manually)
  * @param isProactiveMode
  */
 export const postMessageProcessing = async (
@@ -552,16 +555,20 @@ export const postMessageProcessing = async (
   tools: MCPTool[] = [],
   updateStreamingUI?: (content: ThreadMessage) => void,
   maxToolSteps: number = 20,
+  currentStepCount: number = 0,
   isProactiveMode: boolean = false
 ): Promise<ThreadMessage> => {
-  // Reset counter at the start of a new message processing chain
-  if (toolStepCounter === 0) {
-    toolStepCounter = 0
-  }
-
   // Handle completed tool calls
   if (calls.length > 0) {
-    toolStepCounter++
+    // Check limit BEFORE processing
+    if (currentStepCount >= maxToolSteps) {
+      console.warn(
+        `Reached maximum tool steps (${maxToolSteps}), stopping chain to prevent infinite loop`
+      )
+      return message
+    }
+
+    const nextStepCount = currentStepCount + 1
 
     // Fetch RAG tool names from RAG service
     let ragToolNames = new Set<string>()
@@ -687,6 +694,7 @@ export const postMessageProcessing = async (
       toolCallEntry.response = result
       toolCallEntry.state = 'ready'
       if (updateStreamingUI) updateStreamingUI({ ...message }) // Show result
+
       const streamEvents = (message.metadata?.streamEvents || []) as any[]
       streamEvents.push({
         timestamp: Date.now(),
@@ -701,13 +709,16 @@ export const postMessageProcessing = async (
 
       // Proactive mode: Capture screenshot/snapshot after browser tool execution
       if (isProactiveMode && isBrowserTool && !abortController.signal.aborted) {
-        console.log('Proactive mode: Capturing screenshots after browser tool call')
+        console.log(
+          'Proactive mode: Capturing screenshots after browser tool call'
+        )
 
         // Filter out old screenshots before adding new ones
         filterOldProactiveScreenshots(builder)
 
         // Capture new screenshots
-        const proactiveScreenshots = await captureProactiveScreenshots(abortController)
+        const proactiveScreenshots =
+          await captureProactiveScreenshots(abortController)
 
         // Add proactive screenshots to builder
         for (const screenshot of proactiveScreenshots) {
@@ -722,12 +733,8 @@ export const postMessageProcessing = async (
       // update message metadata
     }
 
-    if (
-      thread &&
-      provider &&
-      !abortController.signal.aborted &&
-      toolStepCounter < maxToolSteps
-    ) {
+    // Process follow-up completion if conditions are met
+    if (thread && provider && !abortController.signal.aborted) {
       try {
         const messagesWithToolResults = builder.getMessages()
 
@@ -750,6 +757,7 @@ export const postMessageProcessing = async (
           )
 
           if (isCompletionResponse(followUpCompletion)) {
+            // Handle non-streaming response
             const choice = followUpCompletion.choices[0]
             const content = choice?.message?.content
             if (content) followUpText = content as string
@@ -759,6 +767,7 @@ export const postMessageProcessing = async (
             if (textContent?.text) textContent.text.value += followUpText
             if (updateStreamingUI) updateStreamingUI({ ...message })
           } else {
+            // Handle streaming response
             const reasoningProcessor = new ReasoningProcessor()
             for await (const chunk of followUpCompletion) {
               if (abortController.signal.aborted) break
@@ -772,9 +781,9 @@ export const postMessageProcessing = async (
                 if (deltaContent) {
                   textContent.text.value += deltaContent
                   followUpText += deltaContent
-                  console.log(`delta content from followup:\n${deltaContent}`)
                 }
               }
+
               if (deltaReasoning) {
                 streamEvents.push({
                   timestamp: Date.now(),
@@ -782,6 +791,7 @@ export const postMessageProcessing = async (
                   data: { content: deltaReasoning },
                 })
               }
+
               const initialToolCallCount = newToolCalls.length
 
               if (chunk.choices[0]?.delta?.tool_calls) {
@@ -795,6 +805,7 @@ export const postMessageProcessing = async (
                   })
                 }
               }
+
               // Ensure the metadata is updated before calling updateStreamingUI
               message.metadata = {
                 ...(message.metadata ?? {}),
@@ -802,26 +813,27 @@ export const postMessageProcessing = async (
               }
 
               if (updateStreamingUI) {
-                // FIX: Create a new object reference for the content array
+                // Create a new object reference for the content array
                 // This forces the memoized component to detect the change in the mutated text
                 const uiMessage: ThreadMessage = {
                   ...message,
-                  content: message.content.map((c) => ({ ...c })), // Shallow copy array and its parts
+                  content: message.content.map((c) => ({ ...c })),
                 }
                 updateStreamingUI(uiMessage)
               }
             }
+
             if (textContent?.text && updateStreamingUI) {
-              // FIX: Create a new object reference for the content array
-              // This forces the memoized component to detect the change in the mutated text
+              // Final UI update after streaming completes
               const uiMessage: ThreadMessage = {
                 ...message,
-                content: message.content.map((c) => ({ ...c })), // Shallow copy array and its parts
+                content: message.content.map((c) => ({ ...c })),
               }
               updateStreamingUI(uiMessage)
             }
           }
 
+          // Recursively process new tool calls if any
           if (newToolCalls.length > 0) {
             builder.addAssistantMessage(followUpText, undefined, newToolCalls)
             await postMessageProcessing(
@@ -837,6 +849,7 @@ export const postMessageProcessing = async (
               tools,
               updateStreamingUI,
               maxToolSteps,
+              nextStepCount, // Pass the incremented step count
               isProactiveMode
             )
           }
@@ -846,11 +859,23 @@ export const postMessageProcessing = async (
           'Failed to get follow-up completion after tool execution:',
           String(error)
         )
+        // Optionally add error to message metadata for UI display
+        const streamEvents = (message.metadata?.streamEvents || []) as any[]
+        streamEvents.push({
+          timestamp: Date.now(),
+          type: 'error',
+          data: {
+            message: 'Follow-up completion failed',
+            error: String(error),
+          },
+        })
+        message.metadata = {
+          ...(message.metadata ?? {}),
+          streamEvents: streamEvents,
+        }
       }
     }
   }
 
-  // Reset counter when the chain is fully resolved
-  toolStepCounter = 0
   return message
 }
