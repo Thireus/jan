@@ -176,14 +176,36 @@ const ThinkingBlock = ({
   }
 
   const headerTitle = useMemo(() => {
-    if (loading) return t('thinking')
+    // Check if any step was a tool call
+    const hasToolCalls = steps.some((step) => step.type === 'tool_call')
+    const hasReasoning = steps.some((step) => step.type === 'reasoning')
+
     const timeInSeconds = formatDuration(duration ?? 0)
 
-    if (timeInSeconds > 0) {
-      return `${t('thought')} ${t('for')} ${timeInSeconds} ${t('seconds')}`
+    if (loading) {
+      // Check if the active step is a tool call
+      if (activeStep?.type === 'tool_call' || hasToolCalls) {
+        return 'Calling tool...'
+      } else {
+        return t('thinking')
+      }
     }
-    return t('thought')
-  }, [loading, duration, t])
+
+    // Build label based on what steps occurred
+    let label = ''
+    if (hasReasoning && hasToolCalls) {
+      label = `${t('thought')}`
+    } else if (hasToolCalls) {
+      label = 'Tool Called'
+    } else {
+      label = t('thought')
+    }
+
+    if (timeInSeconds > 0) {
+      return `${label} ${t('for')} ${timeInSeconds} ${t('seconds')}`
+    }
+    return label
+  }, [loading, duration, t, activeStep, steps])
 
   return (
     <div
