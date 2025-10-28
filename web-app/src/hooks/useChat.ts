@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useCallback, useMemo } from 'react'
 import { flushSync } from 'react-dom'
 import { usePrompt } from './usePrompt'
