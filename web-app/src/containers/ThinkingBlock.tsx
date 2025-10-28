@@ -4,8 +4,9 @@ import { ChevronDown, ChevronUp, Loader, Check } from 'lucide-react'
 import { create } from 'zustand'
 import { RenderMarkdown } from './RenderMarkdown'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
+import ImageModal from '@/containers/dialogs/ImageModal'
 
 // Define ReActStep type (Reasoning-Action Step)
 type ReActStep = {
@@ -21,6 +22,21 @@ interface Props {
   steps?: ReActStep[] // Updated type
   loading?: boolean
   duration?: number
+}
+
+// Utility function to safely parse JSON
+const safeParseJSON = (text: string) => {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
+
+// Utility to create data URL for images
+const createDataUrl = (base64Data: string, mimeType: string): string => {
+  if (base64Data.startsWith('data:')) return base64Data
+  return `data:${mimeType};base64,${base64Data}`
 }
 
 // Zustand store for thinking block state
@@ -57,6 +73,15 @@ const ThinkingBlock = ({
   const thinkingState = useThinkingStore((state) => state.thinkingState)
   const setThinkingState = useThinkingStore((state) => state.setThinkingState)
   const { t } = useTranslation()
+
+  // Move useState for modal management to the top level of the component
+  const [modalImage, setModalImage] = useState<{
+    url: string
+    alt: string
+  } | null>(null)
+  const closeModal = () => setModalImage(null)
+  const handleImageClick = (url: string, alt: string) =>
+    setModalImage({ url, alt })
 
   // Actual loading state comes from prop, determined by whether final text started streaming (Req 2)
   const loading = propLoading
@@ -108,7 +133,12 @@ const ThinkingBlock = ({
   }
 
   // --- Rendering Functions for Expanded View ---
-  const renderStepContent = (step: ReActStep, index: number) => {
+  const renderStepContent = (
+    step: ReActStep,
+    index: number,
+    handleImageClick: (url: string, alt: string) => void,
+    t: (key: string) => string
+  ) => {
     // Updated type
     if (step.type === 'done') {
       const timeInSeconds = formatDuration(step.time ?? 0)
@@ -131,7 +161,14 @@ const ThinkingBlock = ({
       )
     }
 
-    let contentDisplay
+    const parsed = safeParseJSON(step.content)
+    const mcpContent = parsed?.content ?? []
+    const hasImages =
+      Array.isArray(mcpContent) &&
+      mcpContent.some((c) => c.type === 'image' && c.data && c.mimeType)
+
+    let contentDisplay: React.ReactNode
+
     if (step.type === 'tool_call') {
       const args = step.metadata ? step.metadata : ''
       contentDisplay = (
@@ -150,19 +187,52 @@ const ThinkingBlock = ({
         </>
       )
     } else if (step.type === 'tool_output') {
-      contentDisplay = (
-        <>
-          <p className="font-medium text-main-view-fg/90">Tool Output:</p>
-          <div className="mt-1">
-            <RenderMarkdown
-              isWrapping={true}
-              content={step.content.substring(0, 1000)}
-            />
-          </div>
-        </>
-      )
+      if (hasImages) {
+        // Display each image
+        contentDisplay = (
+          <>
+            <p className="font-medium text-main-view-fg/90">
+              Tool Output (Images):
+            </p>
+            <div className="mt-2 space-y-2">
+              {mcpContent.map((item: any, index: number) =>
+                item.type === 'image' && item.data && item.mimeType ? (
+                  <div key={index} className="my-2">
+                    <img
+                      src={createDataUrl(item.data, item.mimeType)}
+                      alt={`MCP Image ${index + 1}`}
+                      className="max-w-full max-h-64 object-contain rounded-md border border-main-view-fg/10 cursor-pointer hover:opacity-80 transition-opacity"
+                      onError={(e) => (e.currentTarget.style.display = 'none')}
+                      onClick={() =>
+                        handleImageClick(
+                          createDataUrl(item.data, item.mimeType),
+                          `MCP Image ${index + 1}`
+                        )
+                      }
+                    />
+                  </div>
+                ) : null
+              )}
+            </div>
+          </>
+        )
+      } else {
+        // Default behavior: wrap text in code block if no backticks
+        let content = step.content.substring(0, 1000)
+        if (!content.includes('```')) {
+          content = '```json\n' + content + '\n```'
+        }
+
+        contentDisplay = (
+          <>
+            <p className="font-medium text-main-view-fg/90">Tool Output:</p>
+            <div className="mt-1">
+              <RenderMarkdown isWrapping={true} content={content} />
+            </div>
+          </>
+        )
+      }
     } else {
-      // reasoning
       contentDisplay = (
         <RenderMarkdown isWrapping={true} content={step.content} />
       )
@@ -175,7 +245,7 @@ const ThinkingBlock = ({
     )
   }
 
-  const headerTitle = useMemo(() => {
+  const headerTitle: string = useMemo(() => {
     // Check if any step was a tool call
     const hasToolCalls = steps.some((step) => step.type === 'tool_call')
     const hasReasoning = steps.some((step) => step.type === 'reasoning')
@@ -255,7 +325,7 @@ const ThinkingBlock = ({
                   )}
                 />
                 {/* Active step content */}
-                {renderStepContent(activeStep, N - 1)}
+                {renderStepContent(activeStep, N - 1, handleImageClick, t)}
               </div>
             </div>
           </div>
@@ -285,13 +355,15 @@ const ThinkingBlock = ({
                   />
 
                   {/* Step Content */}
-                  {renderStepContent(step, index)}
+                  {renderStepContent(step, index, handleImageClick, t)}
                 </div>
               ))}
             </div>
           </div>
         )}
       </div>
+      {/* Render ImageModal once at the top level */}
+      <ImageModal image={modalImage} onClose={closeModal} />
     </div>
   )
 }
