@@ -8,5 +8,12 @@
   },
   "sendMessage": "Send Message",
   "newConversation": "New Conversation",
-  "clearHistory": "Clear History"
+  "clearHistory": "Clear History",
+  "thought_and_tool_call": "Thought and called tools",
+  "tool_called": "Called tools",
+  "calling_tool": "Calling a tool",
+  "thinking": "Thinking",
+  "for": "for",
+  "seconds": "seconds"
 }
+

@@ -114,7 +114,7 @@ const ThinkingBlock = ({
         <div className="mb-4 rounded-lg bg-main-view-fg/4 border border-dashed border-main-view-fg/10 p-2 flex items-center gap-3">
           <Loader className="size-4 animate-spin text-main-view-fg/60" />
           <span className="font-medium text-main-view-fg/80">
-            {t('thinking')}...
+            {t('thinking')}
           </span>
         </div>
       </div>
@@ -253,26 +253,36 @@ const ThinkingBlock = ({
     const timeInSeconds = formatDuration(duration ?? 0)
 
     if (loading) {
-      // Check if the active step is a tool call
-      if (activeStep?.type === 'tool_call' || hasToolCalls) {
-        return 'Calling tool...'
-      } else {
-        return t('thinking')
+      // Logic for streaming (loading) state:
+      if (activeStep) {
+        if (
+          activeStep.type === 'tool_call' ||
+          activeStep.type === 'tool_output'
+        ) {
+          return `${t('calling_tool')}` // Use a specific translation key for tool
+        } else if (activeStep.type === 'reasoning') {
+          return `${t('chat:thinking')}` // Use the generic thinking key
+        }
       }
+
+      // Fallback if loading but no activeStep (isStreamingEmpty case, though handled before this memo)
+      return `${t('chat:thinking')}`
     }
 
+    // Logic for finalized (not loading) state:
     // Build label based on what steps occurred
     let label = ''
     if (hasReasoning && hasToolCalls) {
-      label = `${t('thought')}`
+      // Use a more descriptive label when both were involved
+      label = t('chat:thought_and_tool_call')
     } else if (hasToolCalls) {
-      label = 'Tool Called'
+      label = t('chat:tool_called')
     } else {
-      label = t('thought')
+      label = t('chat:thought')
     }
 
     if (timeInSeconds > 0) {
-      return `${label} ${t('for')} ${timeInSeconds} ${t('seconds')}`
+      return `${label} ${t('chat:for')} ${timeInSeconds} ${t('chat:seconds')}`
     }
     return label
   }, [loading, duration, t, activeStep, steps])
