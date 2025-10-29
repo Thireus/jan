@@ -10,7 +10,7 @@ import ImageModal from '@/containers/dialogs/ImageModal'
 
 // Define ReActStep type (Reasoning-Action Step)
 type ReActStep = {
-  type: 'reasoning' | 'tool_call' | 'tool_output' | 'done' // Changed 'thought' to 'reasoning'
+  type: 'reasoning' | 'tool_call' | 'tool_output' | 'done'
   content: string
   metadata?: any
   time?: number
@@ -114,7 +114,7 @@ const ThinkingBlock = ({
         <div className="mb-4 rounded-lg bg-main-view-fg/4 border border-dashed border-main-view-fg/10 p-2 flex items-center gap-3">
           <Loader className="size-4 animate-spin text-main-view-fg/60" />
           <span className="font-medium text-main-view-fg/80">
-            {t('thinking')}
+            {t('chat:thinking')}
           </span>
         </div>
       </div>
@@ -144,7 +144,7 @@ const ThinkingBlock = ({
       const timeInSeconds = formatDuration(step.time ?? 0)
       const timeDisplay =
         timeInSeconds > 0
-          ? `(${t('for')} ${timeInSeconds} ${t('seconds')})`
+          ? `(${t('chat:for')} ${timeInSeconds} ${t('chat:seconds')})`
           : ''
 
       return (
@@ -259,7 +259,7 @@ const ThinkingBlock = ({
           activeStep.type === 'tool_call' ||
           activeStep.type === 'tool_output'
         ) {
-          return `${t('calling_tool')}` // Use a specific translation key for tool
+          return `${t('chat:calling_tool')}` // Use a specific translation key for tool
         } else if (activeStep.type === 'reasoning') {
           return `${t('chat:thinking')}` // Use the generic thinking key
         }

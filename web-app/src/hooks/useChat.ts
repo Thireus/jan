@@ -755,7 +755,9 @@ export const useChat = () => {
           throw new Error('No response received from the model')
         }
 
-        const totalThinkingTime = Date.now() - startTime // Calculate total elapsed time
+        const completionFinishTime = Date.now()
+        // Calculate the time taken for the initial completion (streaming or non-streaming)
+        const initialCompletionTime = completionFinishTime - startTime
 
         const messageMetadata: Record<string, any> = {
           tokenSpeed: useAppState.getState().tokenSpeed,
@@ -764,7 +766,7 @@ export const useChat = () => {
         }
 
         if (accumulatedText.includes('<think>') || toolCalls.length > 0) {
-          messageMetadata.totalThinkingTime = totalThinkingTime
+          messageMetadata.totalThinkingTime = initialCompletionTime
         }
 
         // This is the message object that will be built upon by postMessageProcessing

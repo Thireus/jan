@@ -406,7 +406,6 @@ export const extractToolCall = (
   }
   return calls
 }
-
 /**
  * Helper function to check if a tool call is a browser MCP tool
  * @param toolName - The name of the tool
@@ -558,6 +557,10 @@ export const postMessageProcessing = async (
   currentStepCount: number = 0,
   isProactiveMode: boolean = false
 ): Promise<ThreadMessage> => {
+  // Initialize/get the current total thinking time from metadata
+  // This value is passed from sendMessage (initial completion time) or previous recursive call
+  let currentTotalTime = (message.metadata?.totalThinkingTime as number) ?? 0
+
   // Handle completed tool calls
   if (calls.length > 0) {
     // Check limit BEFORE processing
@@ -604,6 +607,7 @@ export const postMessageProcessing = async (
       message.metadata = {
         ...(message.metadata ?? {}),
         tool_calls: currentToolCalls,
+        totalThinkingTime: currentTotalTime,
       }
       if (updateStreamingUI) updateStreamingUI({ ...message }) // Show pending call
 
@@ -633,6 +637,8 @@ export const postMessageProcessing = async (
                 toolParameters
               )
             : true)
+
+      const toolExecutionStartTime = Date.now()
 
       const { promise, cancel } = isRagTool
         ? ragFeatureAvailable
@@ -683,6 +689,8 @@ export const postMessageProcessing = async (
             error: 'disallowed',
           }
 
+      const toolExecutionTime = Date.now() - toolExecutionStartTime
+
       if (typeof result === 'string') {
         result = {
           content: [{ type: 'text', text: result }],
@@ -690,9 +698,15 @@ export const postMessageProcessing = async (
         }
       }
 
+      currentTotalTime += toolExecutionTime
+
       // Update the entry in the metadata array
       toolCallEntry.response = result
       toolCallEntry.state = 'ready'
+      message.metadata = {
+        ...(message.metadata ?? {}),
+        totalThinkingTime: currentTotalTime,
+      }
       if (updateStreamingUI) updateStreamingUI({ ...message }) // Show result
 
       const streamEvents = (message.metadata?.streamEvents || []) as any[]
@@ -738,6 +752,8 @@ export const postMessageProcessing = async (
       try {
         const messagesWithToolResults = builder.getMessages()
 
+        const followUpStartTime = Date.now()
+
         const followUpCompletion = await sendCompletion(
           thread,
           provider,
@@ -747,6 +763,8 @@ export const postMessageProcessing = async (
           true,
           {}
         )
+
+        let streamFinishTime = Date.now()
 
         if (followUpCompletion) {
           let followUpText = ''
@@ -766,6 +784,7 @@ export const postMessageProcessing = async (
             }
             if (textContent?.text) textContent.text.value += followUpText
             if (updateStreamingUI) updateStreamingUI({ ...message })
+            streamFinishTime = Date.now()
           } else {
             // Handle streaming response
             const reasoningProcessor = new ReasoningProcessor()
@@ -777,7 +796,6 @@ export const postMessageProcessing = async (
               const deltaContent = chunk.choices[0]?.delta?.content || ''
 
               if (textContent?.text) {
-                // if (deltaReasoning) textContent.text.value += deltaReasoning
                 if (deltaContent) {
                   textContent.text.value += deltaContent
                   followUpText += deltaContent
@@ -810,6 +828,8 @@ export const postMessageProcessing = async (
               message.metadata = {
                 ...(message.metadata ?? {}),
                 streamEvents: streamEvents,
+                totalThinkingTime:
+                  currentTotalTime + (Date.now() - followUpStartTime), // Optimistic update
               }
 
               if (updateStreamingUI) {
@@ -822,7 +842,7 @@ export const postMessageProcessing = async (
                 updateStreamingUI(uiMessage)
               }
             }
-
+            streamFinishTime = Date.now()
             if (textContent?.text && updateStreamingUI) {
               // Final UI update after streaming completes
               const uiMessage: ThreadMessage = {
@@ -833,9 +853,17 @@ export const postMessageProcessing = async (
             }
           }
 
+          const followUpTotalTime = streamFinishTime - followUpStartTime
+          currentTotalTime += followUpTotalTime //
+          message.metadata = {
+            ...(message.metadata ?? {}),
+            totalThinkingTime: currentTotalTime,
+          }
+
           // Recursively process new tool calls if any
           if (newToolCalls.length > 0) {
             builder.addAssistantMessage(followUpText, undefined, newToolCalls)
+            // Recursive call continues accumulation on the same message object
             await postMessageProcessing(
               newToolCalls,
               builder,
