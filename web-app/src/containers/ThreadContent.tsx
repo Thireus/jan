@@ -146,66 +146,11 @@ export const ThreadContent = memo(
       isReasoningActiveLoading,
       hasReasoningSteps,
     } = useMemo(() => {
-      const thinkStartTag = '<think>'
-      const thinkEndTag = '</think>'
-      let currentFinalText = ''
-      let currentReasoning = ''
-      let hasSteps = false
+      // With the streaming functions updated, the text variable now only contains the final output.
+      const currentFinalText = text.trim()
+      const currentReasoning = '' // Reasoning is now only derived from streamEvents/allSteps
 
-      const firstThinkStart = text.indexOf(thinkStartTag)
-      const lastThinkStart = text.lastIndexOf(thinkStartTag)
-      const lastThinkEnd = text.lastIndexOf(thinkEndTag)
-
-      // Check if there's an unclosed <think> tag
-      const hasOpenThink = lastThinkStart > lastThinkEnd
-
-      if (firstThinkStart === -1) {
-        // No <think> tags at all - everything is final output
-        currentFinalText = text
-      } else if (hasOpenThink && isStreamingThisThread) {
-        // CASE 1: There's an open <think> tag during streaming
-        // Everything from FIRST <think> onward is reasoning
-        hasSteps = true
-
-        // Text before first <think> is final output
-        currentFinalText = text.substring(0, firstThinkStart)
-
-        // Everything from first <think> onward is reasoning
-        const reasoningText = text.substring(firstThinkStart)
-
-        // Extract content from all <think> blocks (both closed and open)
-        const reasoningRegex = /<think>([\s\S]*?)(?:<\/think>|$)/g
-        const matches = [...reasoningText.matchAll(reasoningRegex)]
-        const reasoningParts = matches.map((match) => cleanReasoning(match[1]))
-        currentReasoning = reasoningParts.join('\n\n')
-      } else {
-        // CASE 2: All <think> tags are closed
-        // Extract reasoning from inside tags, everything else is final output
-        hasSteps = true
-
-        const reasoningRegex = /<think>[\s\S]*?<\/think>/g
-        const matches = [...text.matchAll(reasoningRegex)]
-
-        let lastIndex = 0
-
-        // Build final output from text between/outside <think> blocks
-        for (const match of matches) {
-          currentFinalText += text.substring(lastIndex, match.index)
-          lastIndex = match.index + match[0].length
-        }
-
-        // Add remaining text after last </think>
-        currentFinalText += text.substring(lastIndex)
-
-        // Extract reasoning content
-        const reasoningParts = matches.map((match) => {
-          const content = match[0].replace(/<think>|<\/think>/g, '')
-          return cleanReasoning(content)
-        })
-        currentReasoning = reasoningParts.join('\n\n')
-      }
-
-      // Check for tool calls
+      // Check for tool calls or reasoning events in metadata to determine steps/loading
       const isToolCallsPresent = !!(
         item.metadata &&
         'tool_calls' in item.metadata &&
@@ -213,19 +158,29 @@ export const ThreadContent = memo(
         item.metadata.tool_calls.length > 0
       )
 
-      hasSteps = hasSteps || isToolCallsPresent
+      // Check for any reasoning chunks in the streamEvents
+      const hasReasoningEvents = !!(
+        item.metadata &&
+        'streamEvents' in item.metadata &&
+        Array.isArray(item.metadata.streamEvents) &&
+        item.metadata.streamEvents.some(
+          (e: StreamEvent) => e.type === 'reasoning_chunk'
+        )
+      )
 
-      // Loading if streaming and no final output yet
+      const hasSteps = isToolCallsPresent || hasReasoningEvents
+
+      // Loading if streaming, no final output yet, but we expect steps (reasoning or tool calls)
       const loading =
-        isStreamingThisThread && currentFinalText.trim().length === 0
+        isStreamingThisThread && currentFinalText.length === 0 && hasSteps
 
       return {
-        finalOutputText: currentFinalText.trim(),
+        finalOutputText: currentFinalText,
         streamedReasoningText: currentReasoning,
         isReasoningActiveLoading: loading,
         hasReasoningSteps: hasSteps,
       }
-    }, [item.content, isStreamingThisThread, item.metadata, text])
+    }, [item.metadata, text, isStreamingThisThread])
 
     const isToolCalls =
       item.metadata &&
@@ -516,7 +471,6 @@ export const ThreadContent = memo(
     // END: Constructing allSteps
 
     // ====================================================================
-    // FIX: Determine which text prop to pass to ThinkingBlock
     // If we have streamEvents, rely on 'steps' and pass an empty text buffer.
     const streamingTextBuffer = useMemo(() => {
       const streamEvents = item.metadata?.streamEvents
@@ -528,9 +482,11 @@ export const ThreadContent = memo(
         return ''
       }
 
-      // Otherwise, rely on the raw text buffer for rendering (used during initial stream fallback)
-      return streamedReasoningText
-    }, [item.metadata?.streamEvents, streamedReasoningText]) // Use the object reference for dependency array
+      // Since we no longer concatenate reasoning to the main text,
+      // the only time we'd rely on text buffer is if streamEvents fails to load.
+      // For robustness, we can simply return an empty string to force use of 'steps'.
+      return ''
+    }, [item.metadata?.streamEvents]) // Use the object reference for dependency array
     // ====================================================================
 
     // Determine if we should show the thinking block

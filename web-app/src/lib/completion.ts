@@ -777,7 +777,7 @@ export const postMessageProcessing = async (
               const deltaContent = chunk.choices[0]?.delta?.content || ''
 
               if (textContent?.text) {
-                if (deltaReasoning) textContent.text.value += deltaReasoning
+                // if (deltaReasoning) textContent.text.value += deltaReasoning
                 if (deltaContent) {
                   textContent.text.value += deltaContent
                   followUpText += deltaContent

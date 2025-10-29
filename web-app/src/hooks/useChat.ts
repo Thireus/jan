@@ -671,7 +671,7 @@ export const useChat = () => {
                 const deltaReasoning =
                   reasoningProcessor.processReasoningChunk(part)
                 if (deltaReasoning) {
-                  accumulatedText += deltaReasoning
+                  // accumulatedText += deltaReasoning
                   // Track reasoning event
                   streamEvents.push({
                     timestamp: Date.now(),
@@ -705,7 +705,7 @@ export const useChat = () => {
               // Only finalize and flush if not aborted
               if (!abortController.signal.aborted) {
                 // Finalize reasoning (close any open think tags)
-                accumulatedText += reasoningProcessor.finalize()
+                // accumulatedText += reasoningProcessor.finalize()
                 // Ensure any pending buffered content is rendered at the end
                 flushIfPending()
               }
