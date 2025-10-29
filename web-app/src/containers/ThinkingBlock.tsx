@@ -107,27 +107,14 @@ const ThinkingBlock = ({
   // Determine if the block is truly empty (streaming started but no content/steps yet)
   const isStreamingEmpty = loading && N === 0
 
-  // If loading started but no content or steps have arrived yet, display the non-expandable 'Thinking...' block
-  if (isStreamingEmpty) {
-    return (
-      <div className="mx-auto w-full break-words">
-        <div className="mb-4 rounded-lg bg-main-view-fg/4 border border-dashed border-main-view-fg/10 p-2 flex items-center gap-3">
-          <Loader className="size-4 animate-spin text-main-view-fg/60" />
-          <span className="font-medium text-main-view-fg/80">
-            {t('chat:thinking')}
-          </span>
-        </div>
-      </div>
-    )
-  }
-
   // If not loading, and there are no steps, hide the block entirely.
   const hasContent = steps.length > 0
   if (!loading && !hasContent) return null
 
   const handleClick = () => {
     // Only allow toggling expansion if not currently loading
-    if (!loading) {
+    // Also only allow if there is content (to prevent collapsing the simple 'Thinking')
+    if (!loading && hasContent) {
       setThinkingState(id, !isExpanded)
     }
   }
@@ -265,7 +252,7 @@ const ThinkingBlock = ({
         }
       }
 
-      // Fallback if loading but no activeStep (isStreamingEmpty case, though handled before this memo)
+      // Fallback for isStreamingEmpty state (N=0)
       return `${t('chat:thinking')}`
     }
 
@@ -289,8 +276,9 @@ const ThinkingBlock = ({
 
   return (
     <div
-      className="mx-auto w-full cursor-pointer break-words"
-      onClick={handleClick}
+      className="mx-auto w-full break-words"
+      // Only set onClick handler if not loading AND we have content to expand
+      onClick={loading || !hasContent ? undefined : handleClick}
     >
       <div className="mb-4 rounded-lg bg-main-view-fg/4 p-2 transition-all duration-200">
         <div className="flex items-center gap-3">
@@ -299,11 +287,12 @@ const ThinkingBlock = ({
           )}
           <button
             className="flex items-center gap-2 focus:outline-none"
-            disabled={loading}
+            // Button is disabled/non-expandable if loading OR if there's no content to show
+            disabled={loading || !hasContent}
           >
             {/* Display chevron only if not loading AND steps exist to expand */}
             {!loading &&
-              steps.length > 0 &&
+              hasContent && // Use hasContent instead of steps.length > 0
               (isExpanded ? (
                 <ChevronUp className="size-4 text-main-view-fg/60 transition-transform duration-200" />
               ) : (
@@ -314,6 +303,14 @@ const ThinkingBlock = ({
             </span>
           </button>
         </div>
+
+        {isStreamingEmpty && (
+          <div className="mt-2 pl-2 pr-4 text-main-view-fg/80">
+            <span className="font-medium text-main-view-fg/80">
+              {t('chat:thinking')}
+            </span>
+          </div>
+        )}
 
         {/* Streaming/Condensed View - shows active step (N-1) */}
         {loading && activeStep && (
@@ -342,7 +339,7 @@ const ThinkingBlock = ({
         )}
 
         {/* Expanded View - shows all steps */}
-        {isExpanded && !loading && (
+        {isExpanded && !loading && hasContent && (
           <div className="mt-4 pl-2 pr-4 text-main-view-fg/60 animate-in fade-in slide-in-from-top-2 duration-300">
             <div className="relative border-main-view-fg/20">
               {steps.map((step, index) => (
