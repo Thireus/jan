@@ -83,7 +83,7 @@ const ThinkingBlock = ({
   const handleImageClick = (url: string, alt: string) =>
     setModalImage({ url, alt })
 
-  // Actual loading state comes from prop, determined by whether final text started streaming (Req 2)
+  // Actual loading state comes from prop, determined by whether final text started streaming
   const loading = propLoading
 
   // Set default expansion state: collapsed if done (not loading).
@@ -98,14 +98,10 @@ const ThinkingBlock = ({
   const N = stepsWithoutDone.length
 
   // Determine the step to display in the condensed streaming view
-  // When loading, we show the last available step (N-1), which is currently accumulating content.
   const activeStep = useMemo(() => {
     if (!loading || N === 0) return null
     return stepsWithoutDone[N - 1]
   }, [loading, N, stepsWithoutDone])
-
-  // Determine if the block is truly empty (streaming started but no content/steps yet)
-  const isStreamingEmpty = loading && N === 0
 
   // If not loading, and there are no steps, hide the block entirely.
   const hasContent = steps.length > 0
@@ -277,7 +273,6 @@ const ThinkingBlock = ({
   return (
     <div
       className="mx-auto w-full break-words"
-      // Only set onClick handler if not loading AND we have content to expand
       onClick={loading || !hasContent ? undefined : handleClick}
     >
       <div className="mb-4 rounded-lg bg-main-view-fg/4 p-2 transition-all duration-200">
@@ -287,12 +282,11 @@ const ThinkingBlock = ({
           )}
           <button
             className="flex items-center gap-2 focus:outline-none"
-            // Button is disabled/non-expandable if loading OR if there's no content to show
             disabled={loading || !hasContent}
           >
             {/* Display chevron only if not loading AND steps exist to expand */}
             {!loading &&
-              hasContent && // Use hasContent instead of steps.length > 0
+              hasContent &&
               (isExpanded ? (
                 <ChevronUp className="size-4 text-main-view-fg/60 transition-transform duration-200" />
               ) : (
@@ -304,16 +298,9 @@ const ThinkingBlock = ({
           </button>
         </div>
 
-        {isStreamingEmpty && (
-          <div className="mt-2 pl-2 pr-4 text-main-view-fg/80">
-            <span className="font-medium text-main-view-fg/80">
-              {t('chat:thinking')}
-            </span>
-          </div>
-        )}
-
         {/* Streaming/Condensed View - shows active step (N-1) */}
-        {loading && activeStep && (
+        {/* This block handles both the N>0 case and the N=0 fallback, ensuring stability. */}
+        {loading && (activeStep || N === 0) && (
           <div
             key={`streaming-${N - 1}`}
             className={cn(
@@ -323,17 +310,20 @@ const ThinkingBlock = ({
             )}
           >
             <div className="relative border-main-view-fg/20">
-              <div className="relative pl-5">
-                {/* Bullet point/Icon position relative to line */}
-                <div
-                  className={cn(
-                    'absolute left-[-2px] top-1.5 size-2 rounded-full bg-main-view-fg/60',
-                    activeStep.type !== 'done' && 'animate-pulse' // Pulse if active/streaming
-                  )}
-                />
-                {/* Active step content */}
-                {renderStepContent(activeStep, N - 1, handleImageClick, t)}
-              </div>
+              {/* If N=0, just show the fallback text in the header and this area remains minimal. */}
+              {activeStep && (
+                <div className="relative pl-5">
+                  {/* Bullet point/Icon position relative to line */}
+                  <div
+                    className={cn(
+                      'absolute left-[-2px] top-1.5 size-2 rounded-full bg-main-view-fg/60',
+                      activeStep.type !== 'done' && 'animate-pulse' // Pulse if active/streaming
+                    )}
+                  />
+                  {/* Active step content */}
+                  {renderStepContent(activeStep, N - 1, handleImageClick, t)}
+                </div>
+              )}
             </div>
           </div>
         )}
