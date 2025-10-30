@@ -534,8 +534,8 @@ const filterOldProactiveScreenshots = (builder: CompletionMessagesBuilder) => {
  * @param tools
  * @param updateStreamingUI
  * @param maxToolSteps
- * @param currentStepCount - Internal counter for recursive calls (do not set manually)
  * @param isProactiveMode
+ * @param currentStepCount - Internal counter for recursive calls (do not set manually)
  */
 export const postMessageProcessing = async (
   calls: ChatCompletionMessageToolCall[],
@@ -554,8 +554,8 @@ export const postMessageProcessing = async (
   tools: MCPTool[] = [],
   updateStreamingUI?: (content: ThreadMessage) => void,
   maxToolSteps: number = 20,
-  currentStepCount: number = 0,
-  isProactiveMode: boolean = false
+  isProactiveMode: boolean = false,
+  currentStepCount: number = 0
 ): Promise<ThreadMessage> => {
   // Initialize/get the current total thinking time from metadata
   // This value is passed from sendMessage (initial completion time) or previous recursive call
@@ -877,8 +877,8 @@ export const postMessageProcessing = async (
               tools,
               updateStreamingUI,
               maxToolSteps,
+              isProactiveMode,
               nextStepCount, // Pass the incremented step count
-              isProactiveMode
             )
           }
         }

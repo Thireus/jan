@@ -673,7 +673,6 @@ describe('completion.ts', () => {
         [], // tools
         undefined, // updateStreamingUI
         undefined, // maxToolSteps
-        undefined, // currentStepCount
         true // isProactiveMode - Correctly set to true
       )
 
@@ -733,7 +732,6 @@ describe('completion.ts', () => {
         [], // tools
         undefined, // updateStreamingUI
         undefined, // maxToolSteps
-        undefined, // currentStepCount
         false // isProactiveMode - Correctly set to false
       )
 
@@ -788,7 +786,6 @@ describe('completion.ts', () => {
         [], // tools
         undefined, // updateStreamingUI
         undefined, // maxToolSteps
-        undefined, // currentStepCount
         true // isProactiveMode - Still set to true, but the non-browser tool should skip the proactive step
       )
 
