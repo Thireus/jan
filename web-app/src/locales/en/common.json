@@ -235,7 +235,21 @@
       "title": "Edit Message"
     },
     "messageMetadata": {
-      "title": "Message Metadata"
+      "title": "Message Metadata",
+      "model": "Model",
+      "name": "Name",
+      "id": "ID",
+      "createdAt": "Created At",
+      "toolSteps": "Tool Steps",
+      "temperature": "Temperature",
+      "topK": "Top K",
+      "topP": "Top P",
+      "description": "Description",
+      "instructions": "Instructions",
+      "tokenSpeed": "Token Speed",
+      "tokenCount": "Token Count",
+      "lastUpdate": "Last Update",
+      "noMessageMetadataAvailable": "No Message Metadata Available"
     }
   },
   "projects": {
