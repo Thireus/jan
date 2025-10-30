@@ -58,7 +58,7 @@ interface MessageMetadata {
 }
 
 interface MessageMetadataDialogProps {
-  metadata: MessageMetadata // Use the specific interface
+  metadata: MessageMetadata | null | undefined // Use the specific interface
   triggerElement?: React.ReactNode
 }
 
