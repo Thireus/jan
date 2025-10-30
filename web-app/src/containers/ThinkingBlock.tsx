@@ -22,6 +22,7 @@ interface Props {
   steps?: ReActStep[] // Updated type
   loading?: boolean
   duration?: number
+  linkComponents?: object
 }
 
 // Utility function to safely parse JSON
@@ -69,6 +70,7 @@ const ThinkingBlock = ({
   steps = [],
   loading: propLoading,
   duration,
+  linkComponents,
 }: Props) => {
   const thinkingState = useThinkingStore((state) => state.thinkingState)
   const setThinkingState = useThinkingStore((state) => state.setThinkingState)
@@ -157,7 +159,7 @@ const ThinkingBlock = ({
       contentDisplay = (
         <>
           <p className="font-medium text-main-view-fg/90">
-            Tool Call: <span className="text-accent">{step.content}</span>
+            Tool Input: <span className="text-accent">{step.content}</span>
           </p>
           {args && (
             <div className="mt-1">
@@ -210,14 +212,22 @@ const ThinkingBlock = ({
           <>
             <p className="font-medium text-main-view-fg/90">Tool Output:</p>
             <div className="mt-1">
-              <RenderMarkdown isWrapping={true} content={content} />
+              <RenderMarkdown
+                isWrapping={true}
+                content={content}
+                components={linkComponents}
+              />
             </div>
           </>
         )
       }
     } else {
       contentDisplay = (
-        <RenderMarkdown isWrapping={true} content={step.content} />
+        <RenderMarkdown
+          isWrapping={true}
+          content={step.content}
+          components={linkComponents}
+        />
       )
     }
 

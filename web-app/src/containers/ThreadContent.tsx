@@ -642,6 +642,7 @@ export const ThreadContent = memo(
                 duration={
                   item.metadata?.totalThinkingTime as number | undefined
                 }
+                linkComponents={linkComponents}
               />
             )}
 
