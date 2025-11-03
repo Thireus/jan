@@ -24,6 +24,7 @@ import { predefinedProviders } from '@/consts/providers'
 import { useServiceHub } from '@/hooks/useServiceHub'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
+import { getLastUsedModel } from '@/utils/getModelToStart'
 
 type DropdownModelProviderProps = {
   model?: ThreadModel
@@ -39,16 +40,6 @@ interface SearchableModel {
 }
 
 // Helper functions for localStorage
-const getLastUsedModel = (): { provider: string; model: string } | null => {
-  try {
-    const stored = localStorage.getItem(localStorageKey.lastUsedModel)
-    return stored ? JSON.parse(stored) : null
-  } catch (error) {
-    console.debug('Failed to get last used model from localStorage:', error)
-    return null
-  }
-}
-
 const setLastUsedModel = (provider: string, model: string) => {
   try {
     localStorage.setItem(
@@ -199,7 +190,18 @@ const DropdownModelProvider = ({
               return
             }
           }
-          selectModelProvider('', '')
+
+          // Fallback: auto-select first llamacpp model if available
+          const llamacppProvider = providers.find(
+            (p) => p.provider === 'llamacpp' && p.active && p.models.length > 0
+          )
+          if (llamacppProvider && llamacppProvider.models.length > 0) {
+            const firstModel = llamacppProvider.models[0]
+            selectModelProvider('llamacpp', firstModel.id)
+            setLastUsedModel('llamacpp', firstModel.id)
+          } else {
+            selectModelProvider('', '')
+          }
         }
       } else {
         // Get current state for web auto-selection check
