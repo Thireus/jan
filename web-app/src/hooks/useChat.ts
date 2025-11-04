@@ -444,7 +444,9 @@ export const useChat = () => {
 
         // Check if proactive mode is enabled
         const isProactiveMode =
-          selectedModel?.capabilities?.includes('proactive') ?? false
+          (selectedModel?.capabilities?.includes('tools') ?? false) &&
+          (selectedModel?.capabilities?.includes('vision') ?? false) &&
+          (selectedModel?.capabilities?.includes('proactive') ?? false)
 
         // Proactive mode: Capture initial screenshot/snapshot before first LLM call
         if (

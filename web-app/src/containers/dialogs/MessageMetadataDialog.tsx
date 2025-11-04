@@ -41,7 +41,7 @@ interface AssistantMetadata {
   id: string
   instructions: string
   name: string
-  parameters: Parameters
+  parameters?: Parameters
   tool_steps: number
 }
 
@@ -177,23 +177,25 @@ export function MessageMetadataDialog({
                   />
 
                   {/* Parameters */}
-                  <div className="col-span-1 md:col-span-2 grid grid-cols-3 gap-3">
-                    <DetailItem
-                      icon={<IconTemperature size={18} />}
-                      label={t('common:dialogs.messageMetadata.temperature')}
-                      value={assistant.parameters.temperature}
-                    />
-                    <DetailItem
-                      icon={<IconHierarchy size={18} />}
-                      label={t('common:dialogs.messageMetadata.topK')}
-                      value={assistant.parameters.top_k}
-                    />
-                    <DetailItem
-                      icon={<IconBoxMultiple size={18} />}
-                      label={t('common:dialogs.messageMetadata.topP')}
-                      value={assistant.parameters.top_p}
-                    />
-                  </div>
+                  {assistant.parameters && (
+                    <div className="col-span-1 md:col-span-2 grid grid-cols-3 gap-3">
+                      <DetailItem
+                        icon={<IconTemperature size={18} />}
+                        label={t('common:dialogs.messageMetadata.temperature')}
+                        value={assistant.parameters.temperature ?? 'N/A'}
+                      />
+                      <DetailItem
+                        icon={<IconHierarchy size={18} />}
+                        label={t('common:dialogs.messageMetadata.topK')}
+                        value={assistant.parameters.top_k ?? 'N/A'}
+                      />
+                      <DetailItem
+                        icon={<IconBoxMultiple size={18} />}
+                        label={t('common:dialogs.messageMetadata.topP')}
+                        value={assistant.parameters.top_p ?? 'N/A'}
+                      />
+                    </div>
+                  )}
 
                   {/* Description/Instructions */}
                   {(assistant.description || assistant.instructions) && (

@@ -3540,7 +3540,7 @@ __metadata:
     "@tauri-apps/plugin-deep-link": "npm:2.4.3"
     "@tauri-apps/plugin-dialog": "npm:2.2.2"
     "@tauri-apps/plugin-http": "npm:2.5.0"
-    "@tauri-apps/plugin-opener": "npm:2.3.0"
+    "@tauri-apps/plugin-opener": "npm:2.5.2"
     "@tauri-apps/plugin-os": "npm:2.2.1"
     "@tauri-apps/plugin-updater": "npm:2.8.1"
     "@testing-library/dom": "npm:10.4.1"
@@ -7428,12 +7428,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tauri-apps/plugin-opener@npm:2.3.0":
-  version: 2.3.0
-  resolution: "@tauri-apps/plugin-opener@npm:2.3.0"
+"@tauri-apps/plugin-opener@npm:2.5.2":
+  version: 2.5.2
+  resolution: "@tauri-apps/plugin-opener@npm:2.5.2"
   dependencies:
-    "@tauri-apps/api": "npm:^2.0.0"
-  checksum: 10c0/6b4e9cd572eb17e528e41814356bd2ea0c2ec5a5858e8087ba19f9e2bb769c513d4f262b222e4347555ec3ddc5289f11bc4e62e6860f2525840570789c45bf27
+    "@tauri-apps/api": "npm:^2.8.0"
+  checksum: 10c0/b10c39063c59ca71e5a5c43bb93da34387a7e707d1baf65a53110141f1a973ce2b73f19be9f63d9312c030760ba2b876ad3069b9a123abb4883e025059a15c3f
   languageName: node
   linkType: hard
 
@@ -7811,6 +7811,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/node@npm:^20.0.0":
+  version: 20.19.24
+  resolution: "@types/node@npm:20.19.24"
+  dependencies:
+    undici-types: "npm:~6.21.0"
+  checksum: 10c0/c872ce80a1e832fe035a3c94a27acb2d6e45ffa1209c0241ac6e2d405db8d6f47eea7a2509b5c2dbedae6231dafb9dbed873dd5daaebbad1f11fdaa58726ce5e
+  languageName: node
+  linkType: hard
+
 "@types/node@npm:^22.10.0":
   version: 22.18.3
   resolution: "@types/node@npm:22.18.3"
@@ -7893,6 +7902,13 @@ __metadata:
   version: 9.0.8
   resolution: "@types/uuid@npm:9.0.8"
   checksum: 10c0/b411b93054cb1d4361919579ef3508a1f12bf15b5fdd97337d3d351bece6c921b52b6daeef89b62340fd73fd60da407878432a1af777f40648cbe53a01723489
+  languageName: node
+  linkType: hard
+
+"@types/whatwg-mimetype@npm:^3.0.2":
+  version: 3.0.2
+  resolution: "@types/whatwg-mimetype@npm:3.0.2"
+  checksum: 10c0/dad39d1e4abe760a0a963c84bbdbd26b1df0eb68aff83bdf6ecbb50ad781ead777f6906d19a87007790b750f7500a12e5624d31fc6a1529d14bd19b5c3a316d1
   languageName: node
   linkType: hard
 
