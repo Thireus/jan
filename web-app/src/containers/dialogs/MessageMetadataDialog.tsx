@@ -225,7 +225,7 @@ export function MessageMetadataDialog({
               <section>
                 <h3 className="flex items-center text-lg font-bold border-b border-main-view-fg/10 pb-2 mb-3">
                   <IconGauge className="mr-2" size={20} />
-                  {t('Performance')}
+                  {t('common:dialogs.messageMetadata.performance')}
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <DetailItem
@@ -249,7 +249,7 @@ export function MessageMetadataDialog({
 
             {!assistant && !tokenSpeed && (
               <p className="text-center text-main-view-fg/70 py-4">
-                {t('common:dialogs.messageMetadata.noMetadataAvailable.')}
+                {t('common:dialogs.messageMetadata.noMetadataAvailable')}
               </p>
             )}
           </div>

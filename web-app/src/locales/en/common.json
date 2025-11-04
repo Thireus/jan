@@ -246,6 +246,7 @@
       "topP": "Top P",
       "description": "Description",
       "instructions": "Instructions",
+      "performance": "Performance",
       "tokenSpeed": "Token Speed",
       "tokenCount": "Token Count",
       "lastUpdate": "Last Update",

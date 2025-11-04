@@ -476,7 +476,7 @@ export const useChat = () => {
         // The agent logic is now self-contained within postMessageProcessing.
         // We no longer need a `while` loop here.
 
-        if (abortController.signal.aborted || !activeProvider) return
+        if (abortController.signal.aborted) return
 
         const modelConfig = activeProvider.models.find(
           (m) => m.id === selectedModel?.id
@@ -673,7 +673,6 @@ export const useChat = () => {
                 const deltaReasoning =
                   reasoningProcessor.processReasoningChunk(part)
                 if (deltaReasoning) {
-                  // accumulatedText += deltaReasoning
                   // Track reasoning event
                   streamEvents.push({
                     timestamp: Date.now(),

@@ -764,7 +764,7 @@ export const postMessageProcessing = async (
           {}
         )
 
-        let streamFinishTime = Date.now()
+        let streamFinishTime: number
 
         if (followUpCompletion) {
           let followUpText = ''
