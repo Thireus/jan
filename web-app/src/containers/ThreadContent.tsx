@@ -57,15 +57,15 @@ const cleanReasoning = (content: string) => {
     .trim()
 }
 
-const CopyButton = ({ text }: { text: string }) => {
+const CopyButton = memo(({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false)
   const { t } = useTranslation()
 
-  const handleCopy = () => {
+  const handleCopy = useCallback(() => {
     navigator.clipboard.writeText(text)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
-  }
+  }, [text])
 
   return (
     <button
@@ -89,7 +89,8 @@ const CopyButton = ({ text }: { text: string }) => {
       )}
     </button>
   )
-}
+})
+CopyButton.displayName = 'CopyButton'
 
 // Use memo to prevent unnecessary re-renders, but allow re-renders when props change
 export const ThreadContent = memo(
@@ -121,56 +122,59 @@ export const ThreadContent = memo(
       }),
       []
     )
+    // Simplification for image check dependency
     const image = useMemo(() => item.content?.[0]?.image_url, [item])
+    const textContentParts = item.content?.find((e) => e.type === 'text')?.text
+    const text = textContentParts?.value ?? ''
     // Only check if streaming is happening for this thread, not the content itself
     const isStreamingThisThread = useAppState(
       (state) => state.streamingContent?.thread_id === item.thread_id
     )
 
-    const text = useMemo(
-      () => item.content.find((e) => e.type === 'text')?.text?.value ?? '',
-      [item.content]
-    )
+    const itemMetadata = item.metadata
+    const itemRole = item.role
+    const itemContent = item.content
+    const threadId = item.thread_id
+    const itemId = item.id
 
     // Extract file metadata from user message text
     const { files: attachedFiles, cleanPrompt } = useMemo(() => {
-      if (item.role === 'user') {
+      if (itemRole === 'user') {
         return extractFilesFromPrompt(text)
       }
       return { files: [], cleanPrompt: text }
-    }, [text, item.role])
+    }, [text, itemRole])
 
     const {
       finalOutputText,
-      streamedReasoningText,
+      streamedReasoningText, // Note: This is usually empty now but kept for fallback path clarity
       isReasoningActiveLoading,
       hasReasoningSteps,
     } = useMemo(() => {
-      // With the streaming functions updated, the text variable now only contains the final output.
       const currentFinalText = text.trim()
-      const currentReasoning = '' // Reasoning is now only derived from streamEvents/allSteps
+      const currentReasoning = ''
 
-      // Check for tool calls or reasoning events in metadata to determine steps/loading
-      const isToolCallsPresent = !!(
-        item.metadata &&
-        'tool_calls' in item.metadata &&
-        Array.isArray(item.metadata.tool_calls) &&
-        item.metadata.tool_calls.length > 0
-      )
+      const toolCalls =
+        itemMetadata &&
+        'tool_calls' in itemMetadata &&
+        Array.isArray(itemMetadata.tool_calls)
+          ? itemMetadata.tool_calls
+          : []
 
-      // Check for any reasoning chunks in the streamEvents
-      const hasReasoningEvents = !!(
-        item.metadata &&
-        'streamEvents' in item.metadata &&
-        Array.isArray(item.metadata.streamEvents) &&
-        item.metadata.streamEvents.some(
-          (e: StreamEvent) => e.type === 'reasoning_chunk'
-        )
+      const streamEvents =
+        itemMetadata &&
+        'streamEvents' in itemMetadata &&
+        Array.isArray(itemMetadata.streamEvents)
+          ? itemMetadata.streamEvents
+          : []
+
+      const isToolCallsPresent = toolCalls.length > 0
+      const hasReasoningEvents = streamEvents.some(
+        (e: StreamEvent) => e.type === 'reasoning_chunk'
       )
 
       const hasSteps = isToolCallsPresent || hasReasoningEvents
 
-      // Loading if streaming, no final output yet, but we expect steps (reasoning or tool calls)
       const loading =
         isStreamingThisThread && currentFinalText.length === 0 && hasSteps
 
@@ -180,7 +184,7 @@ export const ThreadContent = memo(
         isReasoningActiveLoading: loading,
         hasReasoningSteps: hasSteps,
       }
-    }, [item.metadata, text, isStreamingThisThread])
+    }, [itemMetadata, text, isStreamingThisThread])
 
     const isToolCalls =
       item.metadata &&
@@ -230,7 +234,7 @@ export const ThreadContent = memo(
         // Keep embedded document metadata in the message for regenerate
         sendMessage(textContent, true, attachments)
       }
-    }, [deleteMessage, getMessages, item, sendMessage])
+    }, [deleteMessage, getMessages, threadId, itemId, sendMessage])
 
     const removeMessage = useCallback(() => {
       if (
@@ -256,7 +260,7 @@ export const ThreadContent = memo(
       } else {
         deleteMessage(item.thread_id, item.id)
       }
-    }, [deleteMessage, getMessages, item])
+    }, [deleteMessage, getMessages, threadId, itemId])
 
     const assistant = item.metadata?.assistant as
       | { avatar?: React.ReactNode; name?: React.ReactNode }
@@ -273,8 +277,8 @@ export const ThreadContent = memo(
       const steps: ReActStep[] = []
 
       // Get streamEvents from metadata (if available)
-      const streamEvents = (item.metadata?.streamEvents as StreamEvent[]) || []
-      const toolCalls = (item.metadata?.tool_calls || []) as ToolCall[]
+      const streamEvents = (itemMetadata?.streamEvents as StreamEvent[]) || []
+      const toolCalls = (itemMetadata?.tool_calls || []) as ToolCall[]
 
       const isMessageFinalized = !isStreamingThisThread
 
@@ -462,7 +466,7 @@ export const ThreadContent = memo(
 
       return steps
     }, [
-      item,
+      itemMetadata,
       isStreamingThisThread,
       hasReasoningSteps,
       finalOutputText,
@@ -473,7 +477,7 @@ export const ThreadContent = memo(
     // ====================================================================
     // If we have streamEvents, rely on 'steps' and pass an empty text buffer.
     const streamingTextBuffer = useMemo(() => {
-      const streamEvents = item.metadata?.streamEvents
+      const streamEvents = itemMetadata?.streamEvents
 
       // Check if streamEvents exists AND is an array AND has a length greater than 0
       if (Array.isArray(streamEvents) && streamEvents.length > 0) {
@@ -486,7 +490,7 @@ export const ThreadContent = memo(
       // the only time we'd rely on text buffer is if streamEvents fails to load.
       // For robustness, we can simply return an empty string to force use of 'steps'.
       return ''
-    }, [item.metadata?.streamEvents]) // Use the object reference for dependency array
+    }, [itemMetadata?.streamEvents]) // Use the object reference for dependency array
     // ====================================================================
 
     // Determine if we should show the thinking block
@@ -583,7 +587,7 @@ export const ThreadContent = memo(
               <EditMessageDialog
                 message={cleanPrompt || ''}
                 imageUrls={
-                  item.content
+                  itemContent
                     ?.filter((c) => c.type === 'image_url' && c.image_url?.url)
                     .map((c) => c.image_url!.url)
                     .filter((url): url is string => url !== undefined) || []
@@ -595,7 +599,7 @@ export const ThreadContent = memo(
                 }}
               />
               <DeleteMessageDialog
-                onDelete={() => deleteMessage(item.thread_id, item.id)}
+                onDelete={() => deleteMessage(threadId, itemId)}
               />
             </div>
           </div>
@@ -653,7 +657,7 @@ export const ThreadContent = memo(
               />
             )}
 
-            {(
+            {
               <div className="flex items-center gap-2 text-main-view-fg/60 text-xs">
                 <div className={cn('flex items-center gap-2')}>
                   <div
@@ -697,7 +701,7 @@ export const ThreadContent = memo(
                   />
                 </div>
               </div>
-            )}
+            }
           </>
         )}
 

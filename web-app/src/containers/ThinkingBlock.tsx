@@ -4,7 +4,7 @@ import { ChevronDown, ChevronUp, Loader, Check } from 'lucide-react'
 import { create } from 'zustand'
 import { RenderMarkdown } from './RenderMarkdown'
 import { useTranslation } from '@/i18n/react-i18next-compat'
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 import { cn } from '@/lib/utils'
 import ImageModal from '@/containers/dialogs/ImageModal'
 
@@ -81,10 +81,11 @@ const ThinkingBlock = ({
     url: string
     alt: string
   } | null>(null)
-  const closeModal = () => setModalImage(null)
-  const handleImageClick = (url: string, alt: string) =>
-    setModalImage({ url, alt })
-
+  const closeModal = useCallback(() => setModalImage(null), [])
+  const handleImageClick = useCallback(
+    (url: string, alt: string) => setModalImage({ url, alt }),
+    []
+  )
   // Actual loading state comes from prop, determined by whether final text started streaming
   const loading = propLoading
 
@@ -118,125 +119,126 @@ const ThinkingBlock = ({
   }
 
   // --- Rendering Functions for Expanded View ---
-  const renderStepContent = (
-    step: ReActStep,
-    index: number,
-    handleImageClick: (url: string, alt: string) => void,
-    t: (key: string) => string
-  ) => {
-    // Updated type
-    if (step.type === 'done') {
-      const timeInSeconds = formatDuration(step.time ?? 0)
-      const timeDisplay =
-        timeInSeconds > 0
-          ? `(${t('chat:for')} ${timeInSeconds} ${t('chat:seconds')})`
-          : ''
+  const renderStepContent = useCallback(
+    (step: ReActStep, index: number) => {
+      if (step.type === 'done') {
+        const timeInSeconds = formatDuration(step.time ?? 0)
+        const timeDisplay =
+          timeInSeconds > 0
+            ? `(${t('chat:for')} ${timeInSeconds} ${t('chat:seconds')})`
+            : ''
 
-      return (
-        <div
-          key={index}
-          className="flex items-center gap-1 text-accent transition-all"
-        >
-          <Check className="size-4" />
-          <span className="font-medium">{t('done')}</span>
-          {timeDisplay && (
-            <span className="text-main-view-fg/60 text-xs">{timeDisplay}</span>
-          )}
-        </div>
-      )
-    }
+        return (
+          <div
+            key={index}
+            className="flex items-center gap-1 text-accent transition-all"
+          >
+            <Check className="size-4" />
+            <span className="font-medium">{t('done')}</span>
+            {timeDisplay && (
+              <span className="text-main-view-fg/60 text-xs">
+                {timeDisplay}
+              </span>
+            )}
+          </div>
+        )
+      }
 
-    const parsed = safeParseJSON(step.content)
-    const mcpContent = parsed?.content ?? []
-    const hasImages =
-      Array.isArray(mcpContent) &&
-      mcpContent.some((c) => c.type === 'image' && c.data && c.mimeType)
+      const parsed = safeParseJSON(step.content)
+      const mcpContent = parsed?.content ?? []
+      const hasImages =
+        Array.isArray(mcpContent) &&
+        mcpContent.some((c) => c.type === 'image' && c.data && c.mimeType)
 
-    let contentDisplay: React.ReactNode
+      let contentDisplay: React.ReactNode
 
-    if (step.type === 'tool_call') {
-      const args = step.metadata ? step.metadata : ''
-      contentDisplay = (
-        <>
-          <p className="font-medium text-main-view-fg/90">
-            Tool Input: <span className="text-accent">{step.content}</span>
-          </p>
-          {args && (
-            <div className="mt-1">
-              <RenderMarkdown
-                isWrapping={true}
-                content={'```json\n' + args + '\n```'}
-              />
-            </div>
-          )}
-        </>
-      )
-    } else if (step.type === 'tool_output') {
-      if (hasImages) {
-        // Display each image
+      if (step.type === 'tool_call') {
+        const args = step.metadata ? step.metadata : ''
         contentDisplay = (
           <>
             <p className="font-medium text-main-view-fg/90">
-              Tool Output (Images):
+              Tool Input: <span className="text-accent">{step.content}</span>
             </p>
-            <div className="mt-2 space-y-2">
-              {mcpContent.map((item: any, index: number) =>
-                item.type === 'image' && item.data && item.mimeType ? (
-                  <div key={index} className="my-2">
-                    <img
-                      src={createDataUrl(item.data, item.mimeType)}
-                      alt={`MCP Image ${index + 1}`}
-                      className="max-w-full max-h-64 object-contain rounded-md border border-main-view-fg/10 cursor-pointer hover:opacity-80 transition-opacity"
-                      onError={(e) => (e.currentTarget.style.display = 'none')}
-                      onClick={() =>
-                        handleImageClick(
-                          createDataUrl(item.data, item.mimeType),
-                          `MCP Image ${index + 1}`
-                        )
-                      }
-                    />
-                  </div>
-                ) : null
-              )}
-            </div>
+            {args && (
+              <div className="mt-1">
+                <RenderMarkdown
+                  isWrapping={true}
+                  content={'```json\n' + args + '\n```'}
+                />
+              </div>
+            )}
           </>
         )
-      } else {
-        // Default behavior: wrap text in code block if no backticks
-        let content = step.content.substring(0, 1000)
-        if (!content.includes('```')) {
-          content = '```json\n' + content + '\n```'
-        }
+      } else if (step.type === 'tool_output') {
+        if (hasImages) {
+          // Display each image
+          contentDisplay = (
+            <>
+              <p className="font-medium text-main-view-fg/90">
+                Tool Output (Images):
+              </p>
+              <div className="mt-2 space-y-2">
+                {mcpContent.map((item: any, index: number) =>
+                  item.type === 'image' && item.data && item.mimeType ? (
+                    <div key={index} className="my-2">
+                      <img
+                        src={createDataUrl(item.data, item.mimeType)}
+                        alt={`MCP Image ${index + 1}`}
+                        className="max-w-full max-h-64 object-contain rounded-md border border-main-view-fg/10 cursor-pointer hover:opacity-80 transition-opacity"
+                        onError={(e) =>
+                          (e.currentTarget.style.display = 'none')
+                        }
+                        onClick={() =>
+                          handleImageClick(
+                            createDataUrl(item.data, item.mimeType),
+                            `MCP Image ${index + 1}`
+                          )
+                        }
+                      />
+                    </div>
+                  ) : null
+                )}
+              </div>
+            </>
+          )
+        } else {
+          // Default behavior: wrap text in code block if no backticks
+          let content = step.content.substring(0, 1000)
+          if (!content.includes('```')) {
+            content = '```json\n' + content + '\n```'
+          }
 
+          contentDisplay = (
+            <>
+              <p className="font-medium text-main-view-fg/90">Tool Output:</p>
+              <div className="mt-1">
+                <RenderMarkdown
+                  isWrapping={true}
+                  content={content}
+                  components={linkComponents} // Prop dependency is fine here
+                />
+              </div>
+            </>
+          )
+        }
+      } else {
         contentDisplay = (
-          <>
-            <p className="font-medium text-main-view-fg/90">Tool Output:</p>
-            <div className="mt-1">
-              <RenderMarkdown
-                isWrapping={true}
-                content={content}
-                components={linkComponents}
-              />
-            </div>
-          </>
+          <RenderMarkdown
+            isWrapping={true}
+            content={step.content}
+            components={linkComponents} // Prop dependency is fine here
+          />
         )
       }
-    } else {
-      contentDisplay = (
-        <RenderMarkdown
-          isWrapping={true}
-          content={step.content}
-          components={linkComponents}
-        />
-      )
-    }
 
-    return (
-      <div key={index} className="text-main-view-fg/80">
-        {contentDisplay}
-      </div>
-    )
-  }
+      return (
+        <div key={index} className="text-main-view-fg/80">
+          {contentDisplay}
+        </div>
+      )
+    },
+    [t, handleImageClick, linkComponents] // Dependencies for useCallback
+  )
 
   const headerTitle: string = useMemo(() => {
     // Check if any step was a tool call
@@ -331,7 +333,7 @@ const ThinkingBlock = ({
                     )}
                   />
                   {/* Active step content */}
-                  {renderStepContent(activeStep, N - 1, handleImageClick, t)}
+                  {renderStepContent(activeStep, N - 1)}
                 </div>
               )}
             </div>
@@ -362,7 +364,7 @@ const ThinkingBlock = ({
                   />
 
                   {/* Step Content */}
-                  {renderStepContent(step, index, handleImageClick, t)}
+                  {renderStepContent(step, index)}
                 </div>
               ))}
             </div>
