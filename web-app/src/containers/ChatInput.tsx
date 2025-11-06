@@ -1164,7 +1164,9 @@ const ChatInput = ({
               onClick={(e) => {
                 // Update mention detection on click (cursor position change)
                 const cursorPos = e.currentTarget.selectionStart
-                detectMention(prompt, cursorPos)
+                if (prompt.includes('@')) {
+                  detectMention(prompt, cursorPos)
+                }
               }}
               onKeyDown={(e) => {
                 // Handle assistant dropdown navigation
