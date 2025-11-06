@@ -12,6 +12,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
 import { ArrowRight } from 'lucide-react'
 import {
   IconPhoto,
@@ -48,6 +53,8 @@ import { toast } from 'sonner'
 import { PlatformFeatures } from '@/lib/platform/const'
 import { PlatformFeature } from '@/lib/platform/types'
 import { isPlatformTauri } from '@/lib/platform/utils'
+import { useAssistant } from '@/hooks/useAssistant'
+import { AvatarEmoji } from '@/containers/AvatarEmoji'
 
 import {
   Attachment,
@@ -111,6 +118,22 @@ const ChatInput = ({
   const [hasMmproj, setHasMmproj] = useState(false)
   const [hasActiveModels, setHasActiveModels] = useState(false)
   const attachmentsEnabled = useAttachments((s) => s.enabled)
+
+  // Assistant mention state
+  const { assistants, setCurrentAssistant } = useAssistant()
+  const { updateCurrentThreadAssistant } = useThreads()
+  const [showAssistantDropdown, setShowAssistantDropdown] = useState(false)
+  const [mentionQuery, setMentionQuery] = useState('')
+  const [mentionStart, setMentionStart] = useState<number | null>(null)
+  const [selectedAssistantIndex, setSelectedAssistantIndex] = useState(0)
+
+  // Filter assistants based on mention query
+  const filteredAssistants = mentionQuery
+    ? assistants.filter((a) =>
+        a.name.toLowerCase().includes(mentionQuery.toLowerCase())
+      )
+    : assistants
+
   // Determine whether to show the Attach documents button (simple gating)
   const showAttachmentButton =
     attachmentsEnabled && PlatformFeatures[PlatformFeature.ATTACHMENTS]
@@ -215,6 +238,70 @@ const ChatInput = ({
   const mcpExtension = extensionManager.get<MCPExtension>(ExtensionTypeEnum.MCP)
   const MCPToolComponent = mcpExtension?.getToolComponent?.()
 
+  // Detect @ mention in prompt
+  const detectMention = useCallback((text: string, cursorPos: number) => {
+    // Find the last @ before cursor position
+    const beforeCursor = text.slice(0, cursorPos)
+    const lastAtIndex = beforeCursor.lastIndexOf('@')
+
+    if (lastAtIndex === -1) {
+      setShowAssistantDropdown(false)
+      setMentionStart(null)
+      setMentionQuery('')
+      return
+    }
+
+    // Check if there's a space after @ (which would end the mention)
+    const afterAt = beforeCursor.slice(lastAtIndex + 1)
+    if (afterAt.includes(' ') || afterAt.includes('\n')) {
+      setShowAssistantDropdown(false)
+      setMentionStart(null)
+      setMentionQuery('')
+      return
+    }
+
+    // Valid mention detected
+    setMentionStart(lastAtIndex)
+    setMentionQuery(afterAt)
+    setShowAssistantDropdown(true)
+    setSelectedAssistantIndex(0)
+  }, [])
+
+  // Handle assistant selection
+  const selectAssistant = useCallback(
+    (assistant: Assistant) => {
+      if (mentionStart === null || !textareaRef.current) return
+
+      const textarea = textareaRef.current
+      const text = textarea.value
+      const cursorPos = textarea.selectionStart
+
+      // Find the end of the mention (cursor position)
+      const beforeMention = text.slice(0, mentionStart)
+      const afterMention = text.slice(cursorPos)
+
+      // Replace @query with assistant name
+      const newText = `${beforeMention}@${assistant.name} ${afterMention}`
+      const newCursorPos = mentionStart + assistant.name.length + 2 // +2 for @ and space
+
+      setPrompt(newText)
+      setShowAssistantDropdown(false)
+      setMentionStart(null)
+      setMentionQuery('')
+
+      // Set current assistant
+      setCurrentAssistant(assistant)
+      updateCurrentThreadAssistant(assistant)
+
+      // Restore focus and cursor position
+      setTimeout(() => {
+        textarea.focus()
+        textarea.setSelectionRange(newCursorPos, newCursorPos)
+      }, 0)
+    },
+    [mentionStart, setPrompt, setCurrentAssistant, updateCurrentThreadAssistant]
+  )
+
   const handleSendMessage = async (prompt: string) => {
     if (!selectedModel) {
       setMessage('Please select a model to start chatting.')
@@ -312,6 +399,23 @@ const ChatInput = ({
       }, 10)
     }
   }, [streamingContent])
+
+  // Close assistant dropdown when clicking outside
+  useEffect(() => {
+    if (!showAssistantDropdown) return
+
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      if (textareaRef.current && !textareaRef.current.contains(target)) {
+        setShowAssistantDropdown(false)
+        setMentionStart(null)
+        setMentionQuery('')
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [showAssistantDropdown])
 
   const stopStreaming = useCallback(
     (threadId: string) => {
@@ -1047,12 +1151,52 @@ const ChatInput = ({
               value={prompt}
               data-testid={'chat-input'}
               onChange={(e) => {
-                setPrompt(e.target.value)
+                const value = e.target.value
+                const cursorPos = e.target.selectionStart
+                setPrompt(value)
                 // Count the number of newlines to estimate rows
-                const newRows = (e.target.value.match(/\n/g) || []).length + 1
+                const newRows = (value.match(/\n/g) || []).length + 1
                 setRows(Math.min(newRows, maxRows))
+
+                // Detect @ mention
+                detectMention(value, cursorPos)
+              }}
+              onClick={(e) => {
+                // Update mention detection on click (cursor position change)
+                const cursorPos = e.currentTarget.selectionStart
+                detectMention(prompt, cursorPos)
               }}
               onKeyDown={(e) => {
+                // Handle assistant dropdown navigation
+                if (showAssistantDropdown && filteredAssistants.length > 0) {
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault()
+                    setSelectedAssistantIndex((prev) =>
+                      prev < filteredAssistants.length - 1 ? prev + 1 : 0
+                    )
+                    return
+                  }
+                  if (e.key === 'ArrowUp') {
+                    e.preventDefault()
+                    setSelectedAssistantIndex((prev) =>
+                      prev > 0 ? prev - 1 : filteredAssistants.length - 1
+                    )
+                    return
+                  }
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    selectAssistant(filteredAssistants[selectedAssistantIndex])
+                    return
+                  }
+                  if (e.key === 'Escape') {
+                    e.preventDefault()
+                    setShowAssistantDropdown(false)
+                    setMentionStart(null)
+                    setMentionQuery('')
+                    return
+                  }
+                }
+
                 // e.keyCode 229 is for IME input with Safari
                 const isComposing =
                   e.nativeEvent.isComposing || e.keyCode === 229
@@ -1343,6 +1487,54 @@ const ChatInput = ({
           </div>
         </div>
       </div>
+
+      {/* Assistant mention dropdown */}
+      {showAssistantDropdown && filteredAssistants.length > 0 && (
+        <Popover
+          open={showAssistantDropdown}
+          onOpenChange={setShowAssistantDropdown}
+        >
+          <PopoverTrigger asChild>
+            <div className="absolute top-5 left-0 w-0 h-0 pointer-events-none" />
+          </PopoverTrigger>
+          <PopoverContent
+            className="w-40 max-h-60 overflow-y-auto p-1"
+            side="top"
+            align="start"
+            sideOffset={5}
+            onOpenAutoFocus={(e) => e.preventDefault()}
+            onCloseAutoFocus={(e) => {
+              e.preventDefault()
+              textareaRef.current?.focus()
+            }}
+          >
+            {filteredAssistants.map((assistant, index) => (
+              <div
+                key={assistant.id}
+                className={cn(
+                  'px-3 py-2 cursor-pointer flex items-center gap-2 rounded-sm transition-colors',
+                  index === selectedAssistantIndex
+                    ? 'bg-main-view-fg/10'
+                    : 'hover:bg-main-view-fg/5'
+                )}
+                onClick={() => selectAssistant(assistant)}
+                onMouseEnter={() => setSelectedAssistantIndex(index)}
+              >
+                {assistant.avatar && (
+                  <div className="shrink-0 relative w-5 h-5">
+                    <AvatarEmoji
+                      avatar={assistant.avatar}
+                      imageClassName="object-cover"
+                      textClassName="text-xs"
+                    />
+                  </div>
+                )}
+                <span className="text-sm truncate">{assistant.name}</span>
+              </div>
+            ))}
+          </PopoverContent>
+        </Popover>
+      )}
 
       {message && (
         <div className="bg-main-view-fg/2 -mt-0.5 mx-2 pb-2 px-3 pt-1.5 rounded-b-lg text-xs text-destructive transition-all duration-200 ease-in-out">
