@@ -247,7 +247,9 @@
     "reportIssue": "Problem melden",
     "credits": "Credits",
     "creditsDesc1": "Jan wurde mit ❤️ gebaut vom Menlo Team.",
-    "creditsDesc2": "Besonderer Dank gilt unseren Open-Source-Abhängigkeiten - insbesondere llama.cpp und Tauri - und unserer großartigen KI-Community."
+    "creditsDesc2": "Besonderer Dank gilt unseren Open-Source-Abhängigkeiten - insbesondere llama.cpp und Tauri - und unserer großartigen KI-Community.",
+    "fullContext": "Gesamten Kontext einbeziehen",
+    "fullContextDesc": "Sendet bei jeder Anfrage den vollständigen Gesprächsverlauf (sämtliche vorherige Gedankengänge, Tool-Ergebnisse und Anhänge). Wenn deaktiviert, wird nur die letzte Nutzernachricht samt ihrer Assistentenantwort (inklusive Gedankengänge, Tool-Ergebnisse und Anhänge) gesendet."
   },
   "extensions": {
     "title": "Erweiterungen"

@@ -249,7 +249,9 @@
     "reportIssue": "Zgłoś Problem",
     "credits": "Podziękowania",
     "creditsDesc1": "Aplikacja 👋 Jan jest rozwijana z ❤️ przez zespół Menlo Research.",
-    "creditsDesc2": "Szczególne podziękowania dla naszych otwartoźródłowych zależności - zwłaszcza llama.cpp i Tauri - oraz dla naszej wspaniałej społeczności SI."
+    "creditsDesc2": "Szczególne podziękowania dla naszych otwartoźródłowych zależności - zwłaszcza llama.cpp i Tauri - oraz dla naszej wspaniałej społeczności SI.",
+    "fullContext": "Dołącz pełny kontekst",
+    "fullContextDesc": "Wysyłaj przy każdym żądaniu całą historię rozmowy (wszystkie wcześniejsze rozumowania, wyniki narzędzi i załączniki). Po wyłączeniu przesyłana jest tylko ostatnia wiadomość użytkownika oraz odpowiedź asystenta (z rozumowaniem, narzędziami i załącznikami)."
   },
   "extensions": {
     "title": "Rozszerzenia"

@@ -248,7 +248,9 @@
     "reportIssue": "問題を報告",
     "credits": "クレジット",
     "creditsDesc1": "👋 JanはMenlo Researchチームによって❤️を込めて作られています。",
-    "creditsDesc2": "オープンソースの依存関係、特にllama.cppとTauri、そして素晴らしいAIコミュニティに感謝します。"
+    "creditsDesc2": "オープンソースの依存関係、特にllama.cppとTauri、そして素晴らしいAIコミュニティに感謝します。",
+    "fullContext": "完全なコンテキストを含める",
+    "fullContextDesc": "各リクエストで会話履歴全体（過去の思考プロセス、ツール結果、添付ファイルすべて）を送信します。無効にすると、最新のユーザーメッセージとそのアシスタント返信（思考プロセス、ツール結果、添付ファイルを含む）のみを送信します。"
   },
   "extensions": {
     "title": "拡張機能"

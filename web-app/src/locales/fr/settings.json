@@ -257,7 +257,9 @@
     "reportIssue": "Signaler un problème",
     "credits": "Crédits",
     "creditsDesc1": "👋 Jan est construit avec ❤️ par l'équipe de Menlo Research.",
-    "creditsDesc2": "Remerciements spéciaux à nos dépendances open-source, en particulier llama.cpp et Tauri, ainsi qu'à notre incroyable communauté IA."
+    "creditsDesc2": "Remerciements spéciaux à nos dépendances open-source, en particulier llama.cpp et Tauri, ainsi qu'à notre incroyable communauté IA.",
+    "fullContext": "Inclure le contexte complet",
+    "fullContextDesc": "Envoie l'intégralité de l'historique de conversation (tous les raisonnements précédents, résultats d'outils et pièces jointes) à chaque requête. Désactivé, seul le dernier message utilisateur et la réponse de l'assistant (avec raisonnements, appels d'outils et pièces jointes) sont envoyés."
   },
   "extensions": {
     "title": "Extensions"

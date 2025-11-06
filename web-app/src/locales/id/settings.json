@@ -247,7 +247,9 @@
     "reportIssue": "Laporkan Masalah",
     "credits": "Kredit",
     "creditsDesc1": "Jan dibuat dengan ❤️ oleh Tim Menlo.",
-    "creditsDesc2": "Terima kasih khusus kepada dependensi sumber terbuka kami—terutama llama.cpp dan Tauri—dan kepada komunitas AI kami yang luar biasa."
+    "creditsDesc2": "Terima kasih khusus kepada dependensi sumber terbuka kami—terutama llama.cpp dan Tauri—dan kepada komunitas AI kami yang luar biasa.",
+    "fullContext": "Sertakan konteks penuh",
+    "fullContextDesc": "Kirim seluruh riwayat percakapan (semua penalaran sebelumnya, hasil alat, dan lampiran) pada setiap permintaan. Saat dinonaktifkan, hanya pesan pengguna terbaru dan respons asisten (termasuk penalaran, alat, dan lampiran) yang dikirim."
   },
   "extensions": {
     "title": "Ekstensi"

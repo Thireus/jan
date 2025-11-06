@@ -1,6 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { ChatCompletionMessageParam } from 'token.js'
-import { ChatCompletionMessageToolCall } from 'openai/resources'
+import {
+  ChatCompletionAssistantMessageParam,
+  ChatCompletionMessageToolCall,
+} from 'openai/resources'
 import { ThreadMessage, ContentType } from '@janhq/core'
 import { removeReasoningContent } from '@/utils/reasoning'
 // Attachments are now handled upstream in newUserThreadContent
@@ -55,30 +58,40 @@ const convertToolPartToApiContentPart = (part: ToolResult['content'][0]) => {
  */
 export class CompletionMessagesBuilder {
   private messages: ChatCompletionMessageParam[] = []
+  private readonly includeFullContext: boolean
 
-  constructor(messages: ThreadMessage[], systemInstruction?: string) {
+  constructor(
+    messages: ThreadMessage[],
+    systemInstruction?: string,
+    includeFullContext = false
+  ) {
+    this.includeFullContext = includeFullContext
     if (systemInstruction) {
       this.messages.push({
         role: 'system',
         content: systemInstruction,
       })
     }
-    this.messages.push(
-      ...messages
-        .filter((e) => !e.metadata?.error)
-        .map<ChatCompletionMessageParam>((msg) => {
-          const param = this.toCompletionParamFromThread(msg)
-          // In constructor context, normalize empty user text to a placeholder
-          if (
-            param.role === 'user' &&
-            typeof param.content === 'string' &&
-            param.content === ''
-          ) {
-            return { ...param, content: '.' }
-          }
-          return param
-        })
-    )
+
+    const filtered = messages.filter((e) => !e.metadata?.error)
+    for (const msg of filtered) {
+      if (msg.role === 'assistant') {
+        const textValue = msg.content?.[0]?.text?.value || '.'
+        const calls = this.includeFullContext
+          ? this.mapToolCallsFromMetadata(msg)
+          : undefined
+        this.addAssistantMessage(textValue, undefined, calls)
+        if (this.includeFullContext) this.appendHistoricalToolMessagesFromMetadata(msg)
+        continue
+      }
+
+      const param = this.toCompletionParamFromThread(msg)
+      if (param.role === 'user' && typeof param.content === 'string' && param.content === '') {
+        this.messages.push({ ...param, content: '.' })
+      } else {
+        this.messages.push(param)
+      }
+    }
   }
 
   // Normalize a ThreadMessage into a ChatCompletionMessageParam for Token.js
@@ -86,9 +99,12 @@ export class CompletionMessagesBuilder {
     msg: ThreadMessage
   ): ChatCompletionMessageParam {
     if (msg.role === 'assistant') {
+      const textValue = msg.content?.[0]?.text?.value || '.'
       return {
         role: 'assistant',
-        content: removeReasoningContent(msg.content?.[0]?.text?.value || '.'),
+        content: this.includeFullContext
+          ? textValue
+          : removeReasoningContent(textValue),
       } as ChatCompletionMessageParam
     }
 
@@ -125,6 +141,55 @@ export class CompletionMessagesBuilder {
     return { role: 'user', content: text }
   }
 
+  // Build ChatCompletionMessageToolCall[] from historical metadata
+  private mapToolCallsFromMetadata(
+    msg: ThreadMessage
+  ): ChatCompletionMessageToolCall[] | undefined {
+    try {
+      const toolCallsMeta = (msg as any)?.metadata?.tool_calls
+      if (!Array.isArray(toolCallsMeta) || toolCallsMeta.length === 0) return undefined
+      const calls = toolCallsMeta
+        .map((entry: any) => {
+          const tool = entry?.tool ?? entry
+          const fn = tool?.function
+          const id = tool?.id ?? entry?.id
+          if (!id || !fn?.name) return null
+          const args =
+            typeof fn.arguments === 'string'
+              ? fn.arguments
+              : JSON.stringify(fn.arguments ?? '')
+          return {
+            id,
+            type: 'function',
+            function: { name: fn.name, arguments: args },
+          } as ChatCompletionMessageToolCall
+        })
+        .filter(Boolean) as ChatCompletionMessageToolCall[]
+      return calls.length ? calls : undefined
+    } catch (e) {
+      void e
+      return undefined
+    }
+  }
+
+  // Append historical tool result messages based on metadata ordering
+  private appendHistoricalToolMessagesFromMetadata(msg: ThreadMessage): void {
+    try {
+      const callsMeta: any[] = (msg as any)?.metadata?.tool_calls
+      if (!Array.isArray(callsMeta) || callsMeta.length === 0) return
+      for (const entry of callsMeta) {
+        if (entry?.state && entry.state !== 'ready') continue
+        const response = entry?.response
+        const toolId = entry?.tool?.id || entry?.id || `tool_${this.messages.length}`
+        if (response && toolId) {
+          this.addToolMessage(response as ToolResult | string, toolId)
+        }
+      }
+    } catch (e) {
+      void e
+    }
+  }
+
   /**
    * Add a user message to the messages array from a parsed ThreadMessage.
    * Upstream code should construct the message via newUserThreadContent
@@ -154,10 +219,12 @@ export class CompletionMessagesBuilder {
   ) {
     this.messages.push({
       role: 'assistant',
-      content: removeReasoningContent(content),
-      refusal: refusal,
-      tool_calls: calls,
-    })
+      content: this.includeFullContext
+        ? content
+        : removeReasoningContent(content),
+      ...(refusal !== undefined ? { refusal } : {}),
+      ...(calls !== undefined ? { tool_calls: calls } : {}),
+    } as ChatCompletionAssistantMessageParam)
   }
 
   /**

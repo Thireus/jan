@@ -104,10 +104,8 @@
     "threadScrollDesc": "Choose how the chat viewport should react when new messages arrive.",
     "threadScrollFlowTitle": "Flow scroll",
     "threadScrollFlowHint": "Keeps the viewport anchored to the latest message you send.",
-    
     "threadScrollStickyTitle": "Sticky scroll",
     "threadScrollStickyHint": "Automatically follows along as replies stream in real time.",
-    
     "tokenCounterCompact": "Compact Token Counter",
     "tokenCounterCompactDesc": "Show token counter inside chat input. When disabled, token counter appears below the input.",
     "codeBlockTitle": "Code Block",
@@ -259,7 +257,9 @@
     "reportIssue": "Report Issue",
     "credits": "Credits",
     "creditsDesc1": "👋 Jan is built with ❤️ by the Menlo Research team.",
-    "creditsDesc2": "Special thanks to our open-source dependencies—especially llama.cpp and Tauri—and to our amazing AI community."
+    "creditsDesc2": "Special thanks to our open-source dependencies—especially llama.cpp and Tauri—and to our amazing AI community.",
+    "fullContext": "Include full context",
+    "fullContextDesc": "Send the entire conversation history (all previous reasoning, tool call results, and attachments) with each request. When disabled, only the latest user message and its assistant response (including reasoning, tool calls, and attachments) are sent."
   },
   "extensions": {
     "title": "Extensions"

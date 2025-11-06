@@ -4,6 +4,7 @@ import { usePrompt } from './usePrompt'
 import { useModelProvider } from './useModelProvider'
 import { useThreads } from './useThreads'
 import { useAppState } from './useAppState'
+import { useGeneralSetting } from './useGeneralSetting'
 import { useMessages } from './useMessages'
 import { useRouter } from '@tanstack/react-router'
 import { defaultModel } from '@/lib/models'
@@ -401,11 +402,13 @@ export const useChat = () => {
           updateLoadingModel(false)
         }
         const currentAssistant = useAssistant.getState().currentAssistant
+        const includeFullContext = useGeneralSetting.getState().includeFullContext
         const builder = new CompletionMessagesBuilder(
           messages,
           currentAssistant
             ? renderInstructions(currentAssistant.instructions)
-            : undefined
+            : undefined,
+          includeFullContext
         )
         // Using addUserMessage to respect legacy code. Should be using the userContent above.
         if (troubleshooting) builder.addUserMessage(userContent)

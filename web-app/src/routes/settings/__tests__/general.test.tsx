@@ -61,6 +61,8 @@ vi.mock('@/hooks/useGeneralSetting', () => ({
   useGeneralSetting: () => ({
     spellCheckChatInput: true,
     setSpellCheckChatInput: vi.fn(),
+    includeFullContext: false,
+    setIncludeFullContext: vi.fn(),
     huggingfaceToken: 'test-token',
     setHuggingfaceToken: vi.fn(),
   }),
@@ -341,12 +343,19 @@ describe('General Settings Route', () => {
       render(<Component />)
     })
 
-    const switches = screen.getAllByTestId('switch')
-    expect(switches.length).toBeGreaterThan(0)
+    // Click specifically the Spell Check switch to avoid other toggles
+    const cardItems = screen.getAllByTestId('card-item')
+    const spellCheckItem = cardItems.find(
+      (el) => el.getAttribute('data-title') === 'settings:others.spellCheck'
+    )
+    expect(spellCheckItem).toBeDefined()
 
-    // Test that switches are interactive
+    const switches = spellCheckItem!.querySelectorAll('[data-testid="switch"]')
+    expect(switches.length).toBe(1)
+
+    // Test that the Spell Check switch is interactive
     await act(async () => {
-      fireEvent.click(switches[0])
+      fireEvent.click(switches[0] as HTMLElement)
     })
     expect(switches[0]).toBeInTheDocument()
   })

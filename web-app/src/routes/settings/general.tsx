@@ -45,6 +45,10 @@ function General() {
     huggingfaceToken,
     setHuggingfaceToken,
   } = useGeneralSetting()
+  const includeFullContext = useGeneralSetting((s) => s.includeFullContext)
+  const setIncludeFullContext = useGeneralSetting(
+    (s) => s.setIncludeFullContext
+  )
   const serviceHub = useServiceHub()
 
   const openFileTitle = (): string => {
@@ -372,6 +376,16 @@ function General() {
             {/* Advanced - Desktop only */}
             {PlatformFeatures[PlatformFeature.SYSTEM_INTEGRATIONS] && (
               <Card title="Advanced">
+                <CardItem
+                  title={t('settings:general.fullContext')}
+                  description={t('settings:general.fullContextDesc')}
+                  actions={
+                    <Switch
+                      checked={includeFullContext}
+                      onCheckedChange={setIncludeFullContext}
+                    />
+                  }
+                />
                 <CardItem
                   title={t('settings:others.resetFactory', {
                     ns: 'settings',

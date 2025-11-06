@@ -247,7 +247,9 @@
     "reportIssue": "報告問題",
     "credits": "致謝",
     "creditsDesc1": "Jan 由 Menlo 團隊用 ❤️ 構建。",
-    "creditsDesc2": "特別感謝我們的開源依賴項——尤其是 llama.cpp 和 Tauri——以及我們出色的 AI 社群。"
+    "creditsDesc2": "特別感謝我們的開源依賴項——尤其是 llama.cpp 和 Tauri——以及我們出色的 AI 社群。",
+    "fullContext": "包含完整脈絡",
+    "fullContextDesc": "每次請求都會傳送完整對話紀錄（包含所有先前的推理、工具呼叫結果與附件）。關閉後，只會傳送最新的使用者訊息及其助理回覆（含推理、工具呼叫與附件）。"
   },
   "extensions": {
     "title": "擴充功能"

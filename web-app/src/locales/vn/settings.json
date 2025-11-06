@@ -249,7 +249,9 @@
     "reportIssue": "Báo cáo Vấn đề",
     "credits": "Ghi công",
     "creditsDesc1": "Jan được xây dựng với ❤️ bởi Đội Menlo.",
-    "creditsDesc2": "Cảm ơn đặc biệt đến các phụ thuộc mã nguồn mở của chúng tôi—đặc biệt là llama.cpp và Tauri—và đến cộng đồng AI tuyệt vời của chúng tôi."
+    "creditsDesc2": "Cảm ơn đặc biệt đến các phụ thuộc mã nguồn mở của chúng tôi—đặc biệt là llama.cpp và Tauri—và đến cộng đồng AI tuyệt vời của chúng tôi.",
+    "fullContext": "Bao gồm toàn bộ ngữ cảnh",
+    "fullContextDesc": "Gửi toàn bộ lịch sử cuộc trò chuyện (mọi phần suy luận trước đó, kết quả công cụ và tệp đính kèm) trong mỗi yêu cầu. Khi tắt, chỉ gửi tin nhắn mới nhất của người dùng và phản hồi của trợ lý (kèm suy luận, công cụ và tệp đính kèm)."
   },
   "extensions": {
     "title": "Tiện ích mở rộng"

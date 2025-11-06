@@ -249,7 +249,9 @@
     "reportIssue": "报告问题",
     "credits": "致谢",
     "creditsDesc1": "Jan 由 Menlo 团队用 ❤️ 构建。",
-    "creditsDesc2": "特别感谢我们的开源依赖项——尤其是 llama.cpp 和 Tauri——以及我们出色的 AI 社区。"
+    "creditsDesc2": "特别感谢我们的开源依赖项——尤其是 llama.cpp 和 Tauri——以及我们出色的 AI 社区。",
+    "fullContext": "包含完整上下文",
+    "fullContextDesc": "每次请求都会发送整个对话历史（所有先前的思考过程、工具调用结果和附件）。关闭后，仅发送最新的用户消息及其助手回复（包括推理、工具调用和附件）。"
   },
   "extensions": {
     "title": "扩展"
