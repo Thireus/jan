@@ -1596,7 +1596,7 @@ export default class llamacpp_extension extends AIEngine {
     const port = await this.getRandomPort()
 
     // disable llama-server webui
-    args.push('--no-webui')
+    //args.push('--no-webui')
     const api_key = await this.generateApiKey(modelId, String(port))
     envs['LLAMA_API_KEY'] = api_key
     envs['LLAMA_ARG_TIMEOUT'] = String(this.timeout)
