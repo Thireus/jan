@@ -1596,7 +1596,7 @@ export default class llamacpp_extension extends AIEngine {
     const port = await this.getRandomPort()
 
     // disable llama-server webui
-    args.push('--no-webui')
+    //args.push('--no-webui')
     const api_key = await this.generateApiKey(modelId, String(port))
     envs['LLAMA_API_KEY'] = api_key
     envs['LLAMA_ARG_TIMEOUT'] = String(this.timeout)
@@ -1658,7 +1658,7 @@ export default class llamacpp_extension extends AIEngine {
       !cfg.flash_attn ||
       cfg.flash_attn !== ''
     )
-      args.push('--flash-attn', String(cfg.flash_attn)) //default: auto = ON when supported
+      args.push('-fa', String(cfg.flash_attn)) //default: auto = ON when supported
 
     // Boolean flags
     if (cfg.ctx_shift) args.push('--context-shift')
