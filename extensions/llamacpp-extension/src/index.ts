@@ -1798,6 +1798,21 @@ export default class llamacpp_extension extends AIEngine {
       )
       return sInfo
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error)
+
+      if (errorMsg.includes('unknown argument')) {
+        logger.info('Retrying without unsupported flags...')
+
+        const filteredArgs = []
+        for (let i = 0; i < args.length; i++) {
+          if (args[i] === '--no-webui' || args[i] === '--no-flash-attn') continue
+          if (args[i] === '--flash-attn') { i++; continue }
+          filteredArgs.push(args[i])
+        }
+
+        return await loadLlamaModel(backendPath, filteredArgs, envs, isEmbedding, Number(this.timeout))
+      }
+
       logger.error('Error in load command:\n', error)
       throw error
     }
