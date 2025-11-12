@@ -44,7 +44,7 @@ pub async fn load_llama_model<R: Runtime>(
     mut args: Vec<String>,
     envs: HashMap<String, String>,
     is_embedding: bool,
-    timeout: u64
+    timeout: u64,
 ) -> ServerResult<SessionInfo> {
     let state: State<LlamacppState> = app_handle.state();
     let mut process_map = state.llama_server_process.lock().await;
@@ -69,7 +69,10 @@ pub async fn load_llama_model<R: Runtime>(
         None
     };
 
-    log::info!("MMPROJ Path string: {}", &mmproj_path_string.as_ref().unwrap_or(&"None".to_string()));
+    log::info!(
+        "MMPROJ Path string: {}",
+        &mmproj_path_string.as_ref().unwrap_or(&"None".to_string())
+    );
 
     let api_key: String;
 
@@ -129,6 +132,16 @@ pub async fn load_llama_model<R: Runtime>(
                             log::info!("Server is ready (detected from stdout): '{}'", line);
                             let _ = stdout_ready_tx.send(true).await;
                         }
+                    }
+
+                    // Check for readiness indicators
+                    let line_lower = line.to_lowercase();
+                    if line_lower.contains("http server listening")
+                        || line_lower.contains("all slots are idle")
+                        || line_lower.contains("starting the main loop")
+                    {
+                        log::info!("Server appears to be ready based on stdout: '{}'", line);
+                        let _ = stdout_ready_tx.send(true).await;
                     }
                 }
                 Err(e) => {
